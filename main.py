@@ -17,8 +17,7 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-r = redis.Redis(host=os.getenv("REDIS_HOST", "localhost"), port=6379, db=0, decode_responses=True)
-start_time = datetime.utcnow()
+r = redis.from_url(os.getenv("REDIS_URL", f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"), decode_responses=True)
 
 async def fetch(url, params):
     async with httpx.AsyncClient() as client:
