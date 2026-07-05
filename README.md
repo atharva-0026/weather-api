@@ -1,5 +1,7 @@
 # Weather API
 
+**Live:** https://weather-api-production-fc6a.up.railway.app/ui
+
 Production-grade REST API for real-time weather data with a dark dashboard UI.
 
 ## Features
@@ -35,3 +37,4 @@ docker compose up --build
 | `GET /health` | Health check |
 | `GET /ui` | Dashboard |
 | `GET /docs` | Swagger UI |
+
