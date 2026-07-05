@@ -1,0 +1,55 @@
+2026-07-03 17:43:58,879 Task exception was never retrieved
+future: <Task finished name='Task-3' coro=<refresh_cache() done, defined at /Users/atharva/Desktop/weather-api/main.py:43> exception=network:ConnectionError>
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 1034, in connect_check_health
+    sock = self._connect()
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 1582, in _connect
+    raise err
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 1566, in _connect
+    sock.connect(socket_address)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+ConnectionRefusedError: [Errno 61] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/atharva/Desktop/weather-api/main.py", line 46, in refresh_cache
+    cities = r.zrevrange("leaderboard", 0, 9)
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/commands/core.py", line 8711, in zrevrange
+    return self.execute_command(*pieces, **options)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/client.py", line 798, in execute_command
+    return self._execute_command(*args, **options)
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/client.py", line 804, in _execute_command
+    conn = self.connection or pool.get_connection()
+                              ~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/utils.py", line 258, in wrapper
+    return func(*args, **kwargs)
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 3163, in get_connection
+    connection.connect()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 1007, in connect
+    self.retry.call_with_retry(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        lambda: self.connect_check_health(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        lambda error: self.disconnect(error),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/retry.py", line 132, in call_with_retry
+    raise error
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/retry.py", line 120, in call_with_retry
+    return do()
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 1008, in <lambda>
+    lambda: self.connect_check_health(
+            ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        check_health=True, retry_socket_connect=False
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ),
+    ^
+  File "/opt/homebrew/lib/python3.14/site-packages/redis/connection.py", line 1056, in connect_check_health
+    raise e
+redis.exceptions.ConnectionError: Error 61 connecting to localhost:6379. Connection refused.

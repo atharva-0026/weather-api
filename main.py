@@ -12,6 +12,7 @@ BASE_URL = "https://api.openweathermap.org/data/2.5"
 
 logging.basicConfig(filename="requests.log", level=logging.INFO, format="%(asctime)s %(message)s")
 
+start_time = datetime.utcnow()
 app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version="3.0.0")
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
