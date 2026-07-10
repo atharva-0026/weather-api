@@ -61,6 +61,10 @@ async def health():
     uptime = str(datetime.utcnow() - start_time).split(".")[0]
     return {"status": "ok", "uptime": uptime, "redis": "connected" if r.ping() else "disconnected"}
 
+@app.get("/version", summary="API version")
+async def version():
+    return {"version": "1.1.0", "service": "weather-api"}
+
 @app.get("/weather/{city}", summary="Current weather")
 @limiter.limit("10/minute")
 async def get_weather(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
