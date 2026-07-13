@@ -63,7 +63,7 @@ async def health():
 
 @app.get("/version", summary="API version")
 async def version():
-    return {"version": "1.1.0", "service": "weather-api"}
+    return {"version": "3.0.0", "service": "weather-api"}
 
 @app.get("/weather/{city}", summary="Current weather")
 @limiter.limit("10/minute")
@@ -109,6 +109,25 @@ async def get_uv(city: str, request: Request):
         data = res.json()
     log_query(city, "/uv")
     return {"city": city, "uv_index": data.get("value"), "lat": lat, "lon": lon}
+
+@app.get("/weather/{city}/aqi", summary="Air quality index")
+@limiter.limit("10/minute")
+async def get_aqi(city: str, request: Request):
+    key = f"aqi:{city}"
+    cached = cache_get(key)
+    if cached:
+        return {**cached, "source": "cache"}
+    weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
+    lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{BASE_URL}/air_pollution", params={"lat": lat, "lon": lon, "appid": API_KEY})
+        data = res.json()
+    aqi = data.get("list", [{}])[0].get("main", {}).get("aqi")
+    components = data.get("list", [{}])[0].get("components", {})
+    result = {"city": city, "aqi": aqi, "components": components, "lat": lat, "lon": lon}
+    cache_set(key, result, ttl=1800)
+    log_query(city, "/aqi")
+    return {**result, "source": "api"}
 
 @app.get("/compare", summary="Compare two cities")
 @limiter.limit("10/minute")
