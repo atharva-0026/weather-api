@@ -6,6 +6,8 @@ import httpx, redis, json, os, asyncio, logging
 from dotenv import load_dotenv
 from datetime import datetime
 
+from ml_forecast import get_or_train_model, predict_next_days
+
 load_dotenv()
 API_KEY = os.getenv("OPENWEATHER_API_KEY")
 BASE_URL = "https://api.openweathermap.org/data/2.5"
@@ -128,6 +130,19 @@ async def get_aqi(city: str, request: Request):
     cache_set(key, result, ttl=1800)
     log_query(city, "/aqi")
     return {**result, "source": "api"}
+
+@app.get("/weather/{city}/ml-forecast", summary="ML-based temperature forecast")
+@limiter.limit("5/minute")
+async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le=14)):
+    weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
+    lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
+    try:
+        model, last_date = await get_or_train_model(city, lat, lon)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not train forecast model, try again later")
+    predictions = predict_next_days(model, last_date, days)
+    log_query(city, "/ml-forecast")
+    return {"city": city, "model": "RandomForestRegressor", "trained_through": last_date.isoformat(), "predictions": predictions}
 
 @app.get("/compare", summary="Compare two cities")
 @limiter.limit("10/minute")

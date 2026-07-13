@@ -46,3 +46,31 @@ def test_top_leaderboard_shape():
     res = client.get("/top")
     assert res.status_code == 200
     assert "leaderboard" in res.json()
+
+
+@patch("main.fetch", new_callable=AsyncMock)
+@patch("main.log_query")
+@patch("main.get_or_train_model", new_callable=AsyncMock)
+@patch("main.predict_next_days")
+def test_ml_forecast(mock_predict, mock_train, mock_log, mock_fetch):
+    from datetime import date
+    mock_fetch.return_value = {"coord": {"lat": 19.07, "lon": 72.87}}
+    mock_train.return_value = ("fake_model", date(2026, 7, 12))
+    mock_predict.return_value = [
+        {"date": "2026-07-13", "predicted_temp_max": 31.2},
+        {"date": "2026-07-14", "predicted_temp_max": 30.8},
+    ]
+    res = client.get("/weather/Mumbai/ml-forecast?days=2")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["model"] == "RandomForestRegressor"
+    assert len(body["predictions"]) == 2
+
+
+def test_ml_forecast_train_failure():
+    with patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("main.get_or_train_model", new_callable=AsyncMock) as mock_train:
+        mock_fetch.return_value = {"coord": {"lat": 19.07, "lon": 72.87}}
+        mock_train.side_effect = ValueError("Not enough historical data")
+        res = client.get("/weather/Mumbai/ml-forecast")
+        assert res.status_code == 502
