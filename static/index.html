@@ -60,6 +60,13 @@ button:disabled{opacity:0.4;cursor:not-allowed}
 .aqi-3{background:rgba(245,158,11,0.15);color:var(--warn)}
 .aqi-4{background:rgba(239,68,68,0.15);color:var(--danger)}
 .aqi-5{background:rgba(239,68,68,0.25);color:var(--danger)}
+.chip-row{display:flex;gap:0.5rem;margin-bottom:2rem;flex-wrap:wrap}
+.chip{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Space Grotesk',sans-serif;font-size:0.8rem;padding:0.4rem 0.9rem;border-radius:999px;cursor:pointer;transition:all 0.2s}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.empty-state .icon{font-size:2.5rem;margin-bottom:0.75rem;opacity:0.6}
+.empty-state .title{font-size:1rem;color:var(--text);margin-bottom:0.35rem}
+.empty-state .sub{font-size:0.85rem}
 </style>
 </head>
 <body>
@@ -73,6 +80,14 @@ button:disabled{opacity:0.4;cursor:not-allowed}
   <select id="units-select"><option value="metric">°C</option><option value="imperial">°F</option></select>
   <button id="search-btn" onclick="search()">Search</button>
 </div>
+<div class="chip-row" id="chip-row">
+  <button class="chip" onclick="quickSearch('Mumbai')">Mumbai</button>
+  <button class="chip" onclick="quickSearch('Delhi')">Delhi</button>
+  <button class="chip" onclick="quickSearch('London')">London</button>
+  <button class="chip" onclick="quickSearch('New York')">New York</button>
+  <button class="chip" onclick="quickSearch('Tokyo')">Tokyo</button>
+  <button class="chip" onclick="quickSearch('Dubai')">Dubai</button>
+</div>
 <div class="tabs">
   <button class="tab active" onclick="showTab('current',event)">Current</button>
   <button class="tab" onclick="showTab('forecast',event)">Forecast</button>
@@ -81,7 +96,10 @@ button:disabled{opacity:0.4;cursor:not-allowed}
   <button class="tab" onclick="showTab('compare',event)">Compare</button>
   <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
 </div>
-<div id="tab-current"><div id="current-result"></div></div>
+<div id="tab-current">
+  <div id="stats-strip"></div>
+  <div id="current-result"><div class="card empty-state"><div class="icon">🌍</div><div class="title">Search a city to get started</div><div class="sub">Or tap a quick pick above</div></div></div>
+</div>
 <div id="tab-forecast" class="hidden"><div id="forecast-result"></div></div>
 <div id="tab-uv" class="hidden"><div id="uv-result"></div></div>
 <div id="tab-aqi" class="hidden"><div id="aqi-result"></div></div>
@@ -128,7 +146,7 @@ async function search(){
     const c=aqi.components||{};
     document.getElementById('aqi-result').innerHTML=`<div class="card"><div class="section-title">Air Quality — ${d.name}</div><div class="aqi-badge aqi-${aqi.aqi}">${aqi.aqi}</div><div style="color:var(--muted);margin-bottom:1rem">${aqiLabels[aqi.aqi]||'Unknown'}</div><div class="stats-grid"><div class="stat"><div class="stat-label">PM2.5</div><div class="stat-value">${c.pm2_5?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">PM10</div><div class="stat-value">${c.pm10?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">O3</div><div class="stat-value">${c.o3?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">NO2</div><div class="stat-value">${c.no2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">SO2</div><div class="stat-value">${c.so2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">CO</div><div class="stat-value">${c.co?.toFixed(1)??'—'}</div></div></div></div>`;
   }catch(e){document.getElementById('current-result').innerHTML=`<div class="error">${e.message}</div>`}
-  btn.disabled=false;btn.textContent='Search'
+  btn.disabled=false;btn.textContent='Search';loadStatsStrip()
 }
 async function compareWeather(){
   const city1=document.getElementById('city1-input').value.trim();
@@ -141,8 +159,19 @@ async function loadTop(){
   try{const d=await apiFetch('/top');const max=d.leaderboard[0]?.searches||1;document.getElementById('top-result').innerHTML=d.leaderboard.length===0?'<span class="loading">No data yet.</span>':d.leaderboard.map((item,i)=>`<div class="leaderboard-row"><div class="rank rank-${i+1}">${String(i+1).padStart(2,'0')}</div><div style="flex:0 0 120px;font-weight:500">${item.city}</div><div class="bar-bg"><div class="bar-fill" style="width:${(item.searches/max)*100}%"></div></div><div class="searches">${item.searches} req</div></div>`).join('')}catch(e){document.getElementById('top-result').innerHTML=`<div class="error">${e.message}</div>`}
 }
 async function checkHealth(){try{const d=await apiFetch('/health');document.getElementById('health-badge').innerHTML=`<span class="health-dot"></span><span style="font-size:0.75rem;color:var(--success)">online · ${d.uptime}</span>`}catch{document.getElementById('health-badge').innerHTML=`<span style="font-size:0.75rem;color:var(--danger)">offline</span>`}}
+function quickSearch(city){document.getElementById('city-input').value=city;search()}
+async function loadStatsStrip(){
+  try{
+    const d=await apiFetch('/top');
+    if(!d.leaderboard||d.leaderboard.length===0)return;
+    const total=d.leaderboard.reduce((s,i)=>s+i.searches,0);
+    const top=d.leaderboard[0];
+    document.getElementById('stats-strip').innerHTML=`<div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.5rem"><div class="stat"><div class="stat-label">Cities Tracked</div><div class="stat-value">${d.leaderboard.length}</div></div><div class="stat"><div class="stat-label">Total Queries</div><div class="stat-value">${total}</div></div><div class="stat"><div class="stat-label">Most Searched</div><div class="stat-value">${top.city}</div></div></div>`;
+  }catch{}
+}
 document.getElementById('city-input').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
 checkHealth();setInterval(checkHealth,30000);
+loadStatsStrip();
 </script>
 </body>
 </html>
