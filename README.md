@@ -5,7 +5,7 @@
 Production-grade REST API for real-time weather data with a dark dashboard UI.
 
 ## Features
-- Current weather, 5-day forecast, UV index, city comparison
+- Current weather, 5-day forecast, UV index, air quality index, city comparison
 - Redis caching (5 min TTL, auto-refresh every 30 mins)
 - Rate limiting (10 req/min per IP)
 - Query history + leaderboard
@@ -31,6 +31,7 @@ docker compose up --build
 | `GET /weather/{city}/forecast` | 5-day forecast |
 | `GET /weather/{city}/alerts` | Severe alerts |
 | `GET /weather/{city}/uv` | UV index |
+| `GET /weather/{city}/aqi` | Air quality index |
 | `GET /compare?city1=X&city2=Y` | Compare cities |
 | `GET /history/{city}` | Query history |
 | `GET /top` | Leaderboard |
