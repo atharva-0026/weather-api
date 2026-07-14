@@ -121,3 +121,45 @@ def test_weather_with_valid_api_key(mock_log, mock_cache_set, mock_cache_get, mo
 def test_weather_with_invalid_api_key(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
     res = client.get("/weather/Mumbai", headers={"x-api-key": "bogus_key"})
     assert res.status_code == 401
+
+
+@patch("main.log_query")
+@patch("main.fetch_with_failover", new_callable=AsyncMock)
+def test_failover_success(mock_failover, mock_log):
+    mock_failover.return_value = {"city": "Mumbai", "temp": 29.0, "humidity": 65, "description": "haze", "lat": 19.07, "lon": 72.87, "provider": "openweather"}
+    res = client.get("/weather/Mumbai/failover")
+    assert res.status_code == 200
+    assert res.json()["provider"] == "openweather"
+
+
+@patch("main.log_query")
+@patch("main.fetch_with_failover", new_callable=AsyncMock)
+def test_failover_falls_back_to_second_provider(mock_failover, mock_log):
+    mock_failover.return_value = {"city": "Mumbai", "temp": 29.0, "humidity": 65, "description": "haze", "lat": 19.07, "lon": 72.87, "provider": "open-meteo"}
+    res = client.get("/weather/Mumbai/failover")
+    assert res.status_code == 200
+    assert res.json()["provider"] == "open-meteo"
+
+
+@patch("main.fetch_with_failover", new_callable=AsyncMock)
+def test_failover_all_providers_down(mock_failover):
+    mock_failover.side_effect = RuntimeError("all providers failed: {}")
+    res = client.get("/weather/Mumbai/failover")
+    assert res.status_code == 503
+
+
+def test_providers_status_shape():
+    res = client.get("/providers/status")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["providers"]) == 3
+    assert all("healthy" in p for p in body["providers"])
+
+
+def test_circuit_breaker_opens_after_threshold():
+    from providers import record_failure, is_open, FAILURE_THRESHOLD
+    import fakeredis
+    fr = fakeredis.FakeStrictRedis(decode_responses=True)
+    for _ in range(FAILURE_THRESHOLD):
+        record_failure(fr, "test-provider")
+    assert is_open(fr, "test-provider") is True

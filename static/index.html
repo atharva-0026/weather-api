@@ -140,12 +140,16 @@ button:disabled{opacity:0.4;cursor:not-allowed}
       </div>
       <div id="usage-result"></div>
     </div>
+    <div style="margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem">
+      <div class="section-title">Provider Health</div>
+      <div id="provider-status"><span class="loading">Loading...</span></div>
+    </div>
   </div>
 </div>
 <script>
 const BASE='';
 async function apiFetch(path){const res=await fetch(BASE+path);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');return data}
-function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop()}
+function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop();if(name==='apikey')loadProviderStatus()}
 async function search(){
   const city=document.getElementById('city-input').value.trim();
   const units=document.getElementById('units-select').value;
@@ -201,6 +205,13 @@ async function loadTop(){
 }
 async function checkHealth(){try{const d=await apiFetch('/health');document.getElementById('health-badge').innerHTML=`<span class="health-dot"></span><span style="font-size:0.75rem;color:var(--success)">online · ${d.uptime}</span>`}catch{document.getElementById('health-badge').innerHTML=`<span style="font-size:0.75rem;color:var(--danger)">offline</span>`}}
 function quickSearch(city){document.getElementById('city-input').value=city;search()}
+async function loadProviderStatus(){
+  const box=document.getElementById('provider-status');
+  try{
+    const d=await apiFetch('/providers/status');
+    box.innerHTML=d.providers.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-bottom:1px solid var(--border)"><span style="text-transform:capitalize">${p.provider}</span><span style="color:${p.healthy?'var(--success)':'var(--danger)'};font-size:0.8rem">${p.healthy?'● healthy':'● cooling down ('+p.recent_failures+' fails)'}</span></div>`).join('');
+  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+}
 async function generateKey(){
   const tier=document.getElementById('tier-select').value;
   const box=document.getElementById('key-result');

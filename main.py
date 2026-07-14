@@ -9,6 +9,7 @@ from typing import Optional
 
 from ml_forecast import get_or_train_model, predict_next_days
 from auth import create_key, validate_and_track, get_usage, TIERS
+from providers import fetch_with_failover, provider_status
 
 load_dotenv()
 API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -162,6 +163,20 @@ async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le
     predictions = predict_next_days(model, last_date, days)
     log_query(city, "/ml-forecast")
     return {"city": city, "model": "RandomForestRegressor", "trained_through": last_date.isoformat(), "predictions": predictions}
+
+@app.get("/weather/{city}/failover", summary="Weather with automatic provider failover")
+@limiter.limit("10/minute")
+async def get_weather_failover(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+    try:
+        data = await fetch_with_failover(r, city, units)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    log_query(city, "/failover")
+    return data
+
+@app.get("/providers/status", summary="Health of each weather provider")
+async def providers_status():
+    return {"providers": provider_status(r)}
 
 @app.get("/compare", summary="Compare two cities")
 @limiter.limit("10/minute")
