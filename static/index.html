@@ -96,6 +96,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
   <button class="tab" onclick="showTab('ml',event)">ML Forecast</button>
   <button class="tab" onclick="showTab('compare',event)">Compare</button>
   <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
+  <button class="tab" onclick="showTab('apikey',event)">API Key</button>
 </div>
 <div id="tab-current">
   <div id="stats-strip"></div>
@@ -120,6 +121,25 @@ button:disabled{opacity:0.4;cursor:not-allowed}
   <div class="card">
     <div class="section-title">Most Searched Cities</div>
     <div id="top-result"><span class="loading">Loading...</span></div>
+  </div>
+</div>
+<div id="tab-apikey" class="hidden">
+  <div class="card">
+    <div class="section-title">API Access</div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Anonymous requests work fine under the shared rate limit. Generate a key for your own tracked daily quota.</div>
+    <div class="search-row" style="max-width:100%">
+      <select id="tier-select"><option value="free">Free — 200/day</option><option value="pro">Pro — 2000/day</option></select>
+      <button onclick="generateKey()">Generate Key</button>
+    </div>
+    <div id="key-result"></div>
+    <div style="margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem">
+      <div class="section-title">Check Usage</div>
+      <div class="search-row" style="max-width:100%">
+        <input id="usage-key-input" type="text" placeholder="Paste your API key..."/>
+        <button onclick="checkUsage()">Check</button>
+      </div>
+      <div id="usage-result"></div>
+    </div>
   </div>
 </div>
 <script>
@@ -181,6 +201,30 @@ async function loadTop(){
 }
 async function checkHealth(){try{const d=await apiFetch('/health');document.getElementById('health-badge').innerHTML=`<span class="health-dot"></span><span style="font-size:0.75rem;color:var(--success)">online · ${d.uptime}</span>`}catch{document.getElementById('health-badge').innerHTML=`<span style="font-size:0.75rem;color:var(--danger)">offline</span>`}}
 function quickSearch(city){document.getElementById('city-input').value=city;search()}
+async function generateKey(){
+  const tier=document.getElementById('tier-select').value;
+  const box=document.getElementById('key-result');
+  box.innerHTML='<span class="loading">Generating...</span>';
+  try{
+    const res=await fetch(`${BASE}/keys?tier=${tier}`,{method:'POST'});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.detail||'Failed');
+    box.innerHTML=`<div style="margin-top:1rem;padding:1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.35rem">YOUR API KEY — save it, it won't be shown again</div><code style="color:var(--accent2);font-size:0.85rem;word-break:break-all">${d.api_key}</code><div style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem">${d.tier} tier · ${d.daily_limit} requests/day</div></div>`;
+  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+}
+async function checkUsage(){
+  const key=document.getElementById('usage-key-input').value.trim();
+  const box=document.getElementById('usage-result');
+  if(!key){box.innerHTML='<div class="error">Enter a key first</div>';return}
+  box.innerHTML='<span class="loading">Checking...</span>';
+  try{
+    const res=await fetch(`${BASE}/usage`,{headers:{'x-api-key':key}});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.detail||'Failed');
+    const pct=Math.min(100,(d.used/d.limit)*100);
+    box.innerHTML=`<div style="margin-top:1rem"><div class="stats-grid"><div class="stat"><div class="stat-label">Used Today</div><div class="stat-value">${d.used}</div></div><div class="stat"><div class="stat-label">Limit</div><div class="stat-value">${d.limit}</div></div><div class="stat"><div class="stat-label">Remaining</div><div class="stat-value">${d.remaining}</div></div></div><div style="background:var(--bg);border-radius:999px;height:6px;margin-top:1rem;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--accent)"></div></div></div>`;
+  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+}
 async function loadStatsStrip(){
   try{
     const d=await apiFetch('/top');

@@ -34,6 +34,11 @@ docker compose up --build
 | `GET /weather/{city}/uv` | UV index |
 | `GET /weather/{city}/aqi` | Air quality index |
 | `GET /weather/{city}/ml-forecast?days=N` | ML temperature forecast (N=1-14) |
+| `POST /keys?tier=free\|pro` | Create an API key |
+| `GET /usage` | Check quota usage (`x-api-key` header) |
+
+## API Keys & Quotas
+Every endpoint works anonymously under the existing per-IP rate limit. Optionally pass an `x-api-key` header (get one from `POST /keys`) to track usage against a daily quota instead: free tier is 200 requests/day, pro is 2000/day. Quotas reset at midnight UTC.
 | `GET /compare?city1=X&city2=Y` | Compare cities |
 | `GET /history/{city}` | Query history |
 | `GET /top` | Leaderboard |

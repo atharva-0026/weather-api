@@ -1,12 +1,14 @@
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, Header, Depends
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import httpx, redis, json, os, asyncio, logging
 from dotenv import load_dotenv
 from datetime import datetime
+from typing import Optional
 
 from ml_forecast import get_or_train_model, predict_next_days
+from auth import create_key, validate_and_track, get_usage, TIERS
 
 load_dotenv()
 API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -21,6 +23,14 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 r = redis.from_url(os.getenv("REDIS_URL", f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"), decode_responses=True)
+
+async def api_key_gate(x_api_key: Optional[str] = Header(default=None)):
+    """Optional API key dependency. If a key is supplied it must be valid
+    and under quota; anonymous requests fall through to the existing
+    per-IP rate limiter untouched."""
+    if x_api_key is None:
+        return None
+    return validate_and_track(r, x_api_key)
 
 async def fetch(url, params):
     async with httpx.AsyncClient() as client:
@@ -67,9 +77,18 @@ async def health():
 async def version():
     return {"version": "3.0.0", "service": "weather-api"}
 
+@app.post("/keys", summary="Create an API key")
+@limiter.limit("5/hour")
+async def create_api_key(request: Request, tier: str = Query("free", enum=list(TIERS.keys()))):
+    return create_key(r, tier)
+
+@app.get("/usage", summary="Check quota usage for an API key")
+async def usage(x_api_key: str = Header(...)):
+    return get_usage(r, x_api_key)
+
 @app.get("/weather/{city}", summary="Current weather")
 @limiter.limit("10/minute")
-async def get_weather(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
+async def get_weather(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
     key = f"weather:{city}:{units}"
     cached = cache_get(key)
     if cached:
@@ -81,7 +100,7 @@ async def get_weather(city: str, request: Request, units: str = Query("metric", 
 
 @app.get("/weather/{city}/forecast", summary="5-day forecast")
 @limiter.limit("10/minute")
-async def get_forecast(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
+async def get_forecast(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
     key = f"forecast:{city}:{units}"
     cached = cache_get(key)
     if cached:
@@ -93,7 +112,7 @@ async def get_forecast(city: str, request: Request, units: str = Query("metric",
 
 @app.get("/weather/{city}/alerts", summary="Severe weather alerts")
 @limiter.limit("10/minute")
-async def get_alerts(city: str, request: Request):
+async def get_alerts(city: str, request: Request, key_info=Depends(api_key_gate)):
     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
     async with httpx.AsyncClient() as client:
@@ -103,7 +122,7 @@ async def get_alerts(city: str, request: Request):
 
 @app.get("/weather/{city}/uv", summary="UV index")
 @limiter.limit("10/minute")
-async def get_uv(city: str, request: Request):
+async def get_uv(city: str, request: Request, key_info=Depends(api_key_gate)):
     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
     async with httpx.AsyncClient() as client:
@@ -114,7 +133,7 @@ async def get_uv(city: str, request: Request):
 
 @app.get("/weather/{city}/aqi", summary="Air quality index")
 @limiter.limit("10/minute")
-async def get_aqi(city: str, request: Request):
+async def get_aqi(city: str, request: Request, key_info=Depends(api_key_gate)):
     key = f"aqi:{city}"
     cached = cache_get(key)
     if cached:
@@ -133,7 +152,7 @@ async def get_aqi(city: str, request: Request):
 
 @app.get("/weather/{city}/ml-forecast", summary="ML-based temperature forecast")
 @limiter.limit("5/minute")
-async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le=14)):
+async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le=14), key_info=Depends(api_key_gate)):
     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
     try:
@@ -146,7 +165,7 @@ async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le
 
 @app.get("/compare", summary="Compare two cities")
 @limiter.limit("10/minute")
-async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
+async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
     w1 = await fetch(f"{BASE_URL}/weather", {"q": city1, "units": units})
     w2 = await fetch(f"{BASE_URL}/weather", {"q": city2, "units": units})
     unit_label = "°C" if units == "metric" else "°F"
