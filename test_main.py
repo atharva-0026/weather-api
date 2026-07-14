@@ -3,7 +3,7 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
-from main import app
+from main import app, r
 
 client = TestClient(app)
 
@@ -158,8 +158,9 @@ def test_providers_status_shape():
 
 def test_circuit_breaker_opens_after_threshold():
     from providers import record_failure, is_open, FAILURE_THRESHOLD
-    import fakeredis
-    fr = fakeredis.FakeStrictRedis(decode_responses=True)
+    test_provider = "pytest-circuit-breaker-check"
+    r.delete(f"provider_breaker:{test_provider}")
     for _ in range(FAILURE_THRESHOLD):
-        record_failure(fr, "test-provider")
-    assert is_open(fr, "test-provider") is True
+        record_failure(r, test_provider)
+    assert is_open(r, test_provider) is True
+    r.delete(f"provider_breaker:{test_provider}")
