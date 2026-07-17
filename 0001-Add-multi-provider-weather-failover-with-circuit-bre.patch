@@ -1,0 +1,344 @@
+From 845383dc09633a6da2fae5c2c4a8cb88b5dbab62 Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Tue, 14 Jul 2026 06:43:38 +0000
+Subject: [PATCH] Add multi-provider weather failover with circuit breaker
+
+---
+ CHANGELOG.md      |   1 +
+ README.md         |   6 ++
+ main.py           |  15 +++++
+ providers.py      | 150 ++++++++++++++++++++++++++++++++++++++++++++++
+ requirements.txt  |   1 +
+ static/index.html |  13 +++-
+ test_main.py      |  42 +++++++++++++
+ 7 files changed, 227 insertions(+), 1 deletion(-)
+ create mode 100644 providers.py
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 42aa929..58021d4 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,7 @@
+ - Documented API endpoints
+ - Added /weather/{city}/ml-forecast: RandomForestRegressor trained on 1yr Open-Meteo historical data per city, cyclical day-of-year + trend features, retrains daily
+ - Added API key issuance (POST /keys), quota tracking (GET /usage), free/pro tiers backed by Redis; optional on all weather endpoints, anonymous IP-based limiting still works unchanged
++- Added multi-provider failover (/weather/{city}/failover): OpenWeather → WeatherAPI → Open-Meteo, Redis-backed circuit breaker per provider, /providers/status for health checks
+ 
+ ## [3.0.0] - 2026-07-13
+ - Added /weather/{city}/aqi endpoint for air quality index
+diff --git a/README.md b/README.md
+index a066d09..46fa5ff 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,7 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
+ 
+ ## Features
+ - Current weather, 5-day forecast, UV index, air quality index, city comparison
++- Multi-provider failover (OpenWeather → WeatherAPI → Open-Meteo) with Redis-backed circuit breaker
+ - ML-based temperature forecast (RandomForestRegressor trained on 1yr historical data per city)
+ - Redis caching (5 min TTL, auto-refresh every 30 mins)
+ - Rate limiting (10 req/min per IP)
+@@ -36,9 +37,14 @@ docker compose up --build
+ | `GET /weather/{city}/ml-forecast?days=N` | ML temperature forecast (N=1-14) |
+ | `POST /keys?tier=free\|pro` | Create an API key |
+ | `GET /usage` | Check quota usage (`x-api-key` header) |
++| `GET /weather/{city}/failover` | Weather with automatic provider failover |
++| `GET /providers/status` | Health of each weather provider |
+ 
+ ## API Keys & Quotas
+ Every endpoint works anonymously under the existing per-IP rate limit. Optionally pass an `x-api-key` header (get one from `POST /keys`) to track usage against a daily quota instead: free tier is 200 requests/day, pro is 2000/day. Quotas reset at midnight UTC.
++
++## Multi-Provider Failover
++`/weather/{city}/failover` tries OpenWeather first, then WeatherAPI.com (set `WEATHERAPI_KEY` to enable), then Open-Meteo (free, no key, always available as a last resort). Each provider trips a circuit breaker after 3 consecutive failures and is skipped for 5 minutes so a dead provider doesn't add latency to every request. Check `/providers/status` to see current health.
+ | `GET /compare?city1=X&city2=Y` | Compare cities |
+ | `GET /history/{city}` | Query history |
+ | `GET /top` | Leaderboard |
+diff --git a/main.py b/main.py
+index 59a1810..cffd116 100644
+--- a/main.py
++++ b/main.py
+@@ -9,6 +9,7 @@ from typing import Optional
+ 
+ from ml_forecast import get_or_train_model, predict_next_days
+ from auth import create_key, validate_and_track, get_usage, TIERS
++from providers import fetch_with_failover, provider_status
+ 
+ load_dotenv()
+ API_KEY = os.getenv("OPENWEATHER_API_KEY")
+@@ -163,6 +164,20 @@ async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le
+     log_query(city, "/ml-forecast")
+     return {"city": city, "model": "RandomForestRegressor", "trained_through": last_date.isoformat(), "predictions": predictions}
+ 
++@app.get("/weather/{city}/failover", summary="Weather with automatic provider failover")
++@limiter.limit("10/minute")
++async def get_weather_failover(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
++    try:
++        data = await fetch_with_failover(r, city, units)
++    except RuntimeError as e:
++        raise HTTPException(status_code=503, detail=str(e))
++    log_query(city, "/failover")
++    return data
++
++@app.get("/providers/status", summary="Health of each weather provider")
++async def providers_status():
++    return {"providers": provider_status(r)}
++
+ @app.get("/compare", summary="Compare two cities")
+ @limiter.limit("10/minute")
+ async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+diff --git a/providers.py b/providers.py
+new file mode 100644
+index 0000000..ea20104
+--- /dev/null
++++ b/providers.py
+@@ -0,0 +1,150 @@
++"""
++Multi-provider weather fetching with automatic failover.
++
++Tries OpenWeather first, then WeatherAPI.com (if configured), then
++Open-Meteo (free, no key) as a last resort. Each provider has a Redis-backed
++circuit breaker: after 3 consecutive failures it's skipped for 5 minutes
++so a dead provider doesn't slow down every request.
++"""
++
++import os
++import httpx
++from datetime import datetime, timedelta
++
++OPENWEATHER_KEY = os.getenv("OPENWEATHER_API_KEY")
++WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY")
++
++OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
++WEATHERAPI_URL = "https://api.weatherapi.com/v1/current.json"
++OPENMETEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
++OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
++
++FAILURE_THRESHOLD = 3
++COOLDOWN_SECONDS = 300
++
++
++def _breaker_key(name: str) -> str:
++    return f"provider_breaker:{name}"
++
++
++def is_open(r, name: str) -> bool:
++    data = r.hgetall(_breaker_key(name))
++    if not data:
++        return False
++    fails = int(data.get("fails", 0))
++    opened_at = data.get("opened_at")
++    if fails >= FAILURE_THRESHOLD and opened_at:
++        if datetime.utcnow() - datetime.fromisoformat(opened_at) < timedelta(seconds=COOLDOWN_SECONDS):
++            return True
++        r.delete(_breaker_key(name))
++    return False
++
++
++def record_success(r, name: str):
++    r.delete(_breaker_key(name))
++
++
++def record_failure(r, name: str):
++    key = _breaker_key(name)
++    fails = r.hincrby(key, "fails", 1)
++    if fails == 1:
++        r.hset(key, "opened_at", datetime.utcnow().isoformat())
++    r.expire(key, COOLDOWN_SECONDS * 2)
++
++
++async def fetch_openweather(city: str, units: str) -> dict:
++    if not OPENWEATHER_KEY:
++        raise RuntimeError("not configured")
++    async with httpx.AsyncClient(timeout=10) as client:
++        res = await client.get(OPENWEATHER_URL, params={"q": city, "units": units, "appid": OPENWEATHER_KEY})
++        data = res.json()
++        if data.get("cod") not in (200, "200"):
++            raise RuntimeError(data.get("message", "error"))
++        return {
++            "city": data["name"],
++            "temp": data["main"]["temp"],
++            "humidity": data["main"]["humidity"],
++            "description": data["weather"][0]["description"],
++            "lat": data["coord"]["lat"],
++            "lon": data["coord"]["lon"],
++            "provider": "openweather",
++        }
++
++
++async def fetch_weatherapi(city: str, units: str) -> dict:
++    if not WEATHERAPI_KEY:
++        raise RuntimeError("not configured")
++    async with httpx.AsyncClient(timeout=10) as client:
++        res = await client.get(WEATHERAPI_URL, params={"key": WEATHERAPI_KEY, "q": city})
++        data = res.json()
++        if "error" in data:
++            raise RuntimeError(data["error"].get("message", "error"))
++        temp = data["current"]["temp_c"] if units == "metric" else data["current"]["temp_f"]
++        return {
++            "city": data["location"]["name"],
++            "temp": temp,
++            "humidity": data["current"]["humidity"],
++            "description": data["current"]["condition"]["text"],
++            "lat": data["location"]["lat"],
++            "lon": data["location"]["lon"],
++            "provider": "weatherapi",
++        }
++
++
++async def fetch_openmeteo(city: str, units: str) -> dict:
++    async with httpx.AsyncClient(timeout=10) as client:
++        geo = await client.get(OPENMETEO_GEOCODE_URL, params={"name": city, "count": 1})
++        results = geo.json().get("results")
++        if not results:
++            raise RuntimeError("city not found")
++        lat, lon, name = results[0]["latitude"], results[0]["longitude"], results[0]["name"]
++        temp_unit = "fahrenheit" if units == "imperial" else "celsius"
++        res = await client.get(OPENMETEO_FORECAST_URL, params={
++            "latitude": lat, "longitude": lon,
++            "current": "temperature_2m,relative_humidity_2m",
++            "temperature_unit": temp_unit,
++        })
++        current = res.json().get("current", {})
++        return {
++            "city": name,
++            "temp": current.get("temperature_2m"),
++            "humidity": current.get("relative_humidity_2m"),
++            "description": "—",
++            "lat": lat,
++            "lon": lon,
++            "provider": "open-meteo",
++        }
++
++
++PROVIDERS = [
++    ("openweather", fetch_openweather),
++    ("weatherapi", fetch_weatherapi),
++    ("open-meteo", fetch_openmeteo),
++]
++
++
++async def fetch_with_failover(r, city: str, units: str) -> dict:
++    errors = {}
++    for name, fn in PROVIDERS:
++        if is_open(r, name):
++            errors[name] = "circuit open, cooling down"
++            continue
++        try:
++            result = await fn(city, units)
++            record_success(r, name)
++            return result
++        except Exception as e:
++            record_failure(r, name)
++            errors[name] = str(e)
++    raise RuntimeError(f"all providers failed: {errors}")
++
++
++def provider_status(r) -> list:
++    return [
++        {
++            "provider": name,
++            "healthy": not is_open(r, name),
++            "recent_failures": int(r.hget(_breaker_key(name), "fails") or 0),
++        }
++        for name, _ in PROVIDERS
++    ]
+diff --git a/requirements.txt b/requirements.txt
+index 5c54a26..1d218bf 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -6,5 +6,6 @@ slowapi==0.1.10
+ uvicorn==0.49.0
+ pytest==8.3.4
+ pytest-asyncio==0.24.0
++fakeredis==2.26.1
+ scikit-learn==1.5.2
+ numpy==2.1.3
+diff --git a/static/index.html b/static/index.html
+index 0f575af..9051d69 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -140,12 +140,16 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+       </div>
+       <div id="usage-result"></div>
+     </div>
++    <div style="margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem">
++      <div class="section-title">Provider Health</div>
++      <div id="provider-status"><span class="loading">Loading...</span></div>
++    </div>
+   </div>
+ </div>
+ <script>
+ const BASE='';
+ async function apiFetch(path){const res=await fetch(BASE+path);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');return data}
+-function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop()}
++function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop();if(name==='apikey')loadProviderStatus()}
+ async function search(){
+   const city=document.getElementById('city-input').value.trim();
+   const units=document.getElementById('units-select').value;
+@@ -201,6 +205,13 @@ async function loadTop(){
+ }
+ async function checkHealth(){try{const d=await apiFetch('/health');document.getElementById('health-badge').innerHTML=`<span class="health-dot"></span><span style="font-size:0.75rem;color:var(--success)">online · ${d.uptime}</span>`}catch{document.getElementById('health-badge').innerHTML=`<span style="font-size:0.75rem;color:var(--danger)">offline</span>`}}
+ function quickSearch(city){document.getElementById('city-input').value=city;search()}
++async function loadProviderStatus(){
++  const box=document.getElementById('provider-status');
++  try{
++    const d=await apiFetch('/providers/status');
++    box.innerHTML=d.providers.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-bottom:1px solid var(--border)"><span style="text-transform:capitalize">${p.provider}</span><span style="color:${p.healthy?'var(--success)':'var(--danger)'};font-size:0.8rem">${p.healthy?'● healthy':'● cooling down ('+p.recent_failures+' fails)'}</span></div>`).join('');
++  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
++}
+ async function generateKey(){
+   const tier=document.getElementById('tier-select').value;
+   const box=document.getElementById('key-result');
+diff --git a/test_main.py b/test_main.py
+index 36fe3f2..7d99f67 100644
+--- a/test_main.py
++++ b/test_main.py
+@@ -121,3 +121,45 @@ def test_weather_with_valid_api_key(mock_log, mock_cache_set, mock_cache_get, mo
+ def test_weather_with_invalid_api_key(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
+     res = client.get("/weather/Mumbai", headers={"x-api-key": "bogus_key"})
+     assert res.status_code == 401
++
++
++@patch("main.log_query")
++@patch("main.fetch_with_failover", new_callable=AsyncMock)
++def test_failover_success(mock_failover, mock_log):
++    mock_failover.return_value = {"city": "Mumbai", "temp": 29.0, "humidity": 65, "description": "haze", "lat": 19.07, "lon": 72.87, "provider": "openweather"}
++    res = client.get("/weather/Mumbai/failover")
++    assert res.status_code == 200
++    assert res.json()["provider"] == "openweather"
++
++
++@patch("main.log_query")
++@patch("main.fetch_with_failover", new_callable=AsyncMock)
++def test_failover_falls_back_to_second_provider(mock_failover, mock_log):
++    mock_failover.return_value = {"city": "Mumbai", "temp": 29.0, "humidity": 65, "description": "haze", "lat": 19.07, "lon": 72.87, "provider": "open-meteo"}
++    res = client.get("/weather/Mumbai/failover")
++    assert res.status_code == 200
++    assert res.json()["provider"] == "open-meteo"
++
++
++@patch("main.fetch_with_failover", new_callable=AsyncMock)
++def test_failover_all_providers_down(mock_failover):
++    mock_failover.side_effect = RuntimeError("all providers failed: {}")
++    res = client.get("/weather/Mumbai/failover")
++    assert res.status_code == 503
++
++
++def test_providers_status_shape():
++    res = client.get("/providers/status")
++    assert res.status_code == 200
++    body = res.json()
++    assert len(body["providers"]) == 3
++    assert all("healthy" in p for p in body["providers"])
++
++
++def test_circuit_breaker_opens_after_threshold():
++    from providers import record_failure, is_open, FAILURE_THRESHOLD
++    import fakeredis
++    fr = fakeredis.FakeStrictRedis(decode_responses=True)
++    for _ in range(FAILURE_THRESHOLD):
++        record_failure(fr, "test-provider")
++    assert is_open(fr, "test-provider") is True
+-- 
+2.43.0
+

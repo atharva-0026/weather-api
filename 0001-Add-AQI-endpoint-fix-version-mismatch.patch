@@ -1,0 +1,64 @@
+From c80ddac8786e9448e842dd442c9a6530ec53dc5a Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Mon, 13 Jul 2026 11:05:58 +0000
+Subject: [PATCH] Add AQI endpoint, fix version mismatch
+
+---
+ CHANGELOG.md |  4 ++++
+ main.py      | 21 ++++++++++++++++++++-
+ 2 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7de4065..cb85000 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,3 +2,7 @@
+ 
+ ## [Unreleased]
+ - Documented API endpoints
++
++## [3.0.0] - 2026-07-13
++- Added /weather/{city}/aqi endpoint for air quality index
++- Fixed version mismatch in /version endpoint
+diff --git a/main.py b/main.py
+index 7610039..a0d431e 100644
+--- a/main.py
++++ b/main.py
+@@ -63,7 +63,7 @@ async def health():
+ 
+ @app.get("/version", summary="API version")
+ async def version():
+-    return {"version": "1.1.0", "service": "weather-api"}
++    return {"version": "3.0.0", "service": "weather-api"}
+ 
+ @app.get("/weather/{city}", summary="Current weather")
+ @limiter.limit("10/minute")
+@@ -110,6 +110,25 @@ async def get_uv(city: str, request: Request):
+     log_query(city, "/uv")
+     return {"city": city, "uv_index": data.get("value"), "lat": lat, "lon": lon}
+ 
++@app.get("/weather/{city}/aqi", summary="Air quality index")
++@limiter.limit("10/minute")
++async def get_aqi(city: str, request: Request):
++    key = f"aqi:{city}"
++    cached = cache_get(key)
++    if cached:
++        return {**cached, "source": "cache"}
++    weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
++    lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
++    async with httpx.AsyncClient() as client:
++        res = await client.get(f"{BASE_URL}/air_pollution", params={"lat": lat, "lon": lon, "appid": API_KEY})
++        data = res.json()
++    aqi = data.get("list", [{}])[0].get("main", {}).get("aqi")
++    components = data.get("list", [{}])[0].get("components", {})
++    result = {"city": city, "aqi": aqi, "components": components, "lat": lat, "lon": lon}
++    cache_set(key, result, ttl=1800)
++    log_query(city, "/aqi")
++    return {**result, "source": "api"}
++
+ @app.get("/compare", summary="Compare two cities")
+ @limiter.limit("10/minute")
+ async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
+-- 
+2.43.0
+

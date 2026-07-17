@@ -1,0 +1,261 @@
+From 30f413dc0e8c0f353e6296400f876bc645cc4fd1 Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Mon, 13 Jul 2026 11:30:59 +0000
+Subject: [PATCH] Add ML-based temperature forecasting (RandomForest on
+ historical data)
+
+---
+ CHANGELOG.md      |  1 +
+ README.md         |  2 ++
+ main.py           | 15 +++++++++
+ ml_forecast.py    | 78 +++++++++++++++++++++++++++++++++++++++++++++++
+ requirements.txt  |  2 ++
+ static/index.html | 21 +++++++++++++
+ test_main.py      | 28 +++++++++++++++++
+ 7 files changed, 147 insertions(+)
+ create mode 100644 ml_forecast.py
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 720ddd5..3a83356 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,6 +2,7 @@
+ 
+ ## [Unreleased]
+ - Documented API endpoints
++- Added /weather/{city}/ml-forecast: RandomForestRegressor trained on 1yr Open-Meteo historical data per city, cyclical day-of-year + trend features, retrains daily
+ 
+ ## [3.0.0] - 2026-07-13
+ - Added /weather/{city}/aqi endpoint for air quality index
+diff --git a/README.md b/README.md
+index ed3dd00..259a82f 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,7 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
+ 
+ ## Features
+ - Current weather, 5-day forecast, UV index, air quality index, city comparison
++- ML-based temperature forecast (RandomForestRegressor trained on 1yr historical data per city)
+ - Redis caching (5 min TTL, auto-refresh every 30 mins)
+ - Rate limiting (10 req/min per IP)
+ - Query history + leaderboard
+@@ -32,6 +33,7 @@ docker compose up --build
+ | `GET /weather/{city}/alerts` | Severe alerts |
+ | `GET /weather/{city}/uv` | UV index |
+ | `GET /weather/{city}/aqi` | Air quality index |
++| `GET /weather/{city}/ml-forecast?days=N` | ML temperature forecast (N=1-14) |
+ | `GET /compare?city1=X&city2=Y` | Compare cities |
+ | `GET /history/{city}` | Query history |
+ | `GET /top` | Leaderboard |
+diff --git a/main.py b/main.py
+index a0d431e..2e4a54e 100644
+--- a/main.py
++++ b/main.py
+@@ -6,6 +6,8 @@ import httpx, redis, json, os, asyncio, logging
+ from dotenv import load_dotenv
+ from datetime import datetime
+ 
++from ml_forecast import get_or_train_model, predict_next_days
++
+ load_dotenv()
+ API_KEY = os.getenv("OPENWEATHER_API_KEY")
+ BASE_URL = "https://api.openweathermap.org/data/2.5"
+@@ -129,6 +131,19 @@ async def get_aqi(city: str, request: Request):
+     log_query(city, "/aqi")
+     return {**result, "source": "api"}
+ 
++@app.get("/weather/{city}/ml-forecast", summary="ML-based temperature forecast")
++@limiter.limit("5/minute")
++async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le=14)):
++    weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
++    lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
++    try:
++        model, last_date = await get_or_train_model(city, lat, lon)
++    except Exception:
++        raise HTTPException(status_code=502, detail="Could not train forecast model, try again later")
++    predictions = predict_next_days(model, last_date, days)
++    log_query(city, "/ml-forecast")
++    return {"city": city, "model": "RandomForestRegressor", "trained_through": last_date.isoformat(), "predictions": predictions}
++
+ @app.get("/compare", summary="Compare two cities")
+ @limiter.limit("10/minute")
+ async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
+diff --git a/ml_forecast.py b/ml_forecast.py
+new file mode 100644
+index 0000000..299eb6d
+--- /dev/null
++++ b/ml_forecast.py
+@@ -0,0 +1,78 @@
++"""
++ML-based temperature forecasting.
++
++Trains a RandomForestRegressor per city on 1 year of historical daily
++max temperatures (free Open-Meteo archive API, no key required), using
++cyclical day-of-year features plus a linear trend term. Retrains once
++per day per city, cached in-process.
++"""
++
++import httpx
++import numpy as np
++from datetime import date, timedelta
++
++from sklearn.ensemble import RandomForestRegressor
++
++HISTORICAL_URL = "https://archive-api.open-meteo.com/v1/archive"
++
++# city -> {"model": RandomForestRegressor, "trained_on": date, "last_date": date}
++_model_cache = {}
++
++
++async def fetch_historical(lat: float, lon: float, days: int = 365) -> dict:
++    end = date.today() - timedelta(days=1)
++    start = end - timedelta(days=days)
++    params = {
++        "latitude": lat,
++        "longitude": lon,
++        "start_date": start.isoformat(),
++        "end_date": end.isoformat(),
++        "daily": "temperature_2m_max,temperature_2m_min",
++        "timezone": "auto",
++    }
++    async with httpx.AsyncClient(timeout=20) as client:
++        res = await client.get(HISTORICAL_URL, params=params)
++        res.raise_for_status()
++        return res.json()
++
++
++def _build_features(dates: list) -> np.ndarray:
++    doy = np.array([d.timetuple().tm_yday for d in dates])
++    sin = np.sin(2 * np.pi * doy / 365.25)
++    cos = np.cos(2 * np.pi * doy / 365.25)
++    trend = np.arange(len(dates))
++    return np.column_stack([sin, cos, trend])
++
++
++def train_model(daily: dict):
++    dates = [date.fromisoformat(d) for d in daily["time"]]
++    y = np.array(daily["temperature_2m_max"], dtype=float)
++    mask = ~np.isnan(y)
++    dates_clean = [d for d, m in zip(dates, mask) if m]
++    X = _build_features(dates_clean)
++    y = y[mask]
++    if len(y) < 30:
++        raise ValueError("Not enough historical data to train a model")
++    model = RandomForestRegressor(n_estimators=200, max_depth=6, random_state=42)
++    model.fit(X, y)
++    return model, dates_clean[-1]
++
++
++async def get_or_train_model(city: str, lat: float, lon: float):
++    cached = _model_cache.get(city)
++    if cached and cached["trained_on"] == date.today():
++        return cached["model"], cached["last_date"]
++    data = await fetch_historical(lat, lon)
++    model, last_date = train_model(data["daily"])
++    _model_cache[city] = {"model": model, "trained_on": date.today(), "last_date": last_date}
++    return model, last_date
++
++
++def predict_next_days(model, last_date: date, n: int = 5) -> list:
++    future_dates = [last_date + timedelta(days=i + 1) for i in range(n)]
++    X = _build_features(future_dates)
++    preds = model.predict(X)
++    return [
++        {"date": d.isoformat(), "predicted_temp_max": round(float(p), 1)}
++        for d, p in zip(future_dates, preds)
++    ]
+diff --git a/requirements.txt b/requirements.txt
+index a256cd2..5c54a26 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -6,3 +6,5 @@ slowapi==0.1.10
+ uvicorn==0.49.0
+ pytest==8.3.4
+ pytest-asyncio==0.24.0
++scikit-learn==1.5.2
++numpy==2.1.3
+diff --git a/static/index.html b/static/index.html
+index 796b107..7d2eed0 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -93,6 +93,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+   <button class="tab" onclick="showTab('forecast',event)">Forecast</button>
+   <button class="tab" onclick="showTab('uv',event)">UV Index</button>
+   <button class="tab" onclick="showTab('aqi',event)">Air Quality</button>
++  <button class="tab" onclick="showTab('ml',event)">ML Forecast</button>
+   <button class="tab" onclick="showTab('compare',event)">Compare</button>
+   <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
+ </div>
+@@ -103,6 +104,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+ <div id="tab-forecast" class="hidden"><div id="forecast-result"></div></div>
+ <div id="tab-uv" class="hidden"><div id="uv-result"></div></div>
+ <div id="tab-aqi" class="hidden"><div id="aqi-result"></div></div>
++<div id="tab-ml" class="hidden"><div id="ml-result"></div></div>
+ <div id="tab-compare" class="hidden">
+   <div class="card">
+     <div class="section-title">Compare Two Cities</div>
+@@ -145,6 +147,25 @@ async function search(){
+     const aqiLabels={1:'Good',2:'Fair',3:'Moderate',4:'Poor',5:'Very Poor'};
+     const c=aqi.components||{};
+     document.getElementById('aqi-result').innerHTML=`<div class="card"><div class="section-title">Air Quality — ${d.name}</div><div class="aqi-badge aqi-${aqi.aqi}">${aqi.aqi}</div><div style="color:var(--muted);margin-bottom:1rem">${aqiLabels[aqi.aqi]||'Unknown'}</div><div class="stats-grid"><div class="stat"><div class="stat-label">PM2.5</div><div class="stat-value">${c.pm2_5?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">PM10</div><div class="stat-value">${c.pm10?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">O3</div><div class="stat-value">${c.o3?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">NO2</div><div class="stat-value">${c.no2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">SO2</div><div class="stat-value">${c.so2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">CO</div><div class="stat-value">${c.co?.toFixed(1)??'—'}</div></div></div></div>`;
++    try{
++      const ml=await apiFetch(`/weather/${city}/ml-forecast?days=7`);
++      const preds=ml.predictions;
++      const temps=preds.map(p=>p.predicted_temp_max);
++      const min=Math.min(...temps),max=Math.max(...temps);
++      const range=max-min||1;
++      const w=600,h=160,pad=20;
++      const pts=preds.map((p,i)=>{
++        const x=pad+(i/(preds.length-1))*(w-2*pad);
++        const y=h-pad-((p.predicted_temp_max-min)/range)*(h-2*pad);
++        return `${x},${y}`;
++      }).join(' ');
++      const dots=preds.map((p,i)=>{
++        const x=pad+(i/(preds.length-1))*(w-2*pad);
++        const y=h-pad-((p.predicted_temp_max-min)/range)*(h-2*pad);
++        return `<circle cx="${x}" cy="${y}" r="4" fill="var(--accent2)"/><text x="${x}" y="${h-2}" font-size="9" fill="var(--muted)" text-anchor="middle">${new Date(p.date).toLocaleDateString([],{weekday:'short'})}</text><text x="${x}" y="${y-10}" font-size="10" fill="var(--text)" text-anchor="middle">${p.predicted_temp_max}°</text>`;
++      }).join('');
++      document.getElementById('ml-result').innerHTML=`<div class="card"><div class="section-title">7-Day ML Forecast — ${d.name}</div><div style="font-size:0.75rem;color:var(--muted);margin-bottom:1rem">Model: ${ml.model} · trained through ${ml.trained_through}</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg></div>`;
++    }catch(e){document.getElementById('ml-result').innerHTML=`<div class="error">${e.message}</div>`}
+   }catch(e){document.getElementById('current-result').innerHTML=`<div class="error">${e.message}</div>`}
+   btn.disabled=false;btn.textContent='Search';loadStatsStrip()
+ }
+diff --git a/test_main.py b/test_main.py
+index b8470c4..b781a2d 100644
+--- a/test_main.py
++++ b/test_main.py
+@@ -46,3 +46,31 @@ def test_top_leaderboard_shape():
+     res = client.get("/top")
+     assert res.status_code == 200
+     assert "leaderboard" in res.json()
++
++
++@patch("main.fetch", new_callable=AsyncMock)
++@patch("main.log_query")
++@patch("main.get_or_train_model", new_callable=AsyncMock)
++@patch("main.predict_next_days")
++def test_ml_forecast(mock_predict, mock_train, mock_log, mock_fetch):
++    from datetime import date
++    mock_fetch.return_value = {"coord": {"lat": 19.07, "lon": 72.87}}
++    mock_train.return_value = ("fake_model", date(2026, 7, 12))
++    mock_predict.return_value = [
++        {"date": "2026-07-13", "predicted_temp_max": 31.2},
++        {"date": "2026-07-14", "predicted_temp_max": 30.8},
++    ]
++    res = client.get("/weather/Mumbai/ml-forecast?days=2")
++    assert res.status_code == 200
++    body = res.json()
++    assert body["model"] == "RandomForestRegressor"
++    assert len(body["predictions"]) == 2
++
++
++def test_ml_forecast_train_failure():
++    with patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
++         patch("main.get_or_train_model", new_callable=AsyncMock) as mock_train:
++        mock_fetch.return_value = {"coord": {"lat": 19.07, "lon": 72.87}}
++        mock_train.side_effect = ValueError("Not enough historical data")
++        res = client.get("/weather/Mumbai/ml-forecast")
++        assert res.status_code == 502
+-- 
+2.43.0
+

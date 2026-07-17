@@ -1,0 +1,26 @@
+From 734c9ad88f52bb3a62cb6efd9ce3faf71f0a2d64 Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Mon, 13 Jul 2026 11:41:07 +0000
+Subject: [PATCH] Fix Dockerfile: install from requirements.txt instead of
+ hardcoded list
+
+---
+ Dockerfile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Dockerfile b/Dockerfile
+index 53a779a..7f5a7dc 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,7 +1,7 @@
+ FROM python:3.11-slim
+ WORKDIR /app
+ COPY requirements.txt .
+-RUN pip install fastapi uvicorn httpx redis slowapi python-dotenv
++RUN pip install --no-cache-dir -r requirements.txt
+ COPY . .
+ RUN mkdir -p static
+ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+-- 
+2.43.0
+

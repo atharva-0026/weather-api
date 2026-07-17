@@ -1,0 +1,156 @@
+From 46dd31630f03cceca2ce496a0eb4e13794fbe7e8 Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Mon, 13 Jul 2026 11:10:17 +0000
+Subject: [PATCH] Add pytest suite, GitHub Actions CI, update docs
+
+---
+ .github/workflows/tests.yml | 38 +++++++++++++++++++++++++++++
+ CHANGELOG.md                |  1 +
+ README.md                   |  3 ++-
+ requirements.txt            |  2 ++
+ test_main.py                | 48 +++++++++++++++++++++++++++++++++++++
+ 5 files changed, 91 insertions(+), 1 deletion(-)
+ create mode 100644 .github/workflows/tests.yml
+ create mode 100644 test_main.py
+
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+new file mode 100644
+index 0000000..43048c0
+--- /dev/null
++++ b/.github/workflows/tests.yml
+@@ -0,0 +1,38 @@
++name: Tests
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++    branches: [main]
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    services:
++      redis:
++        image: redis:7
++        ports:
++          - 6379:6379
++        options: >-
++          --health-cmd "redis-cli ping"
++          --health-interval 10s
++          --health-timeout 5s
++          --health-retries 5
++
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Install dependencies
++        run: pip install -r requirements.txt
++
++      - name: Run tests
++        env:
++          REDIS_URL: redis://localhost:6379/0
++          OPENWEATHER_API_KEY: test_key
++        run: pytest test_main.py -v
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index cb85000..720ddd5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,3 +6,4 @@
+ ## [3.0.0] - 2026-07-13
+ - Added /weather/{city}/aqi endpoint for air quality index
+ - Fixed version mismatch in /version endpoint
++- Added pytest test suite and GitHub Actions CI
+diff --git a/README.md b/README.md
+index 59b188c..ed3dd00 100644
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,7 @@
+ Production-grade REST API for real-time weather data with a dark dashboard UI.
+ 
+ ## Features
+-- Current weather, 5-day forecast, UV index, city comparison
++- Current weather, 5-day forecast, UV index, air quality index, city comparison
+ - Redis caching (5 min TTL, auto-refresh every 30 mins)
+ - Rate limiting (10 req/min per IP)
+ - Query history + leaderboard
+@@ -31,6 +31,7 @@ docker compose up --build
+ | `GET /weather/{city}/forecast` | 5-day forecast |
+ | `GET /weather/{city}/alerts` | Severe alerts |
+ | `GET /weather/{city}/uv` | UV index |
++| `GET /weather/{city}/aqi` | Air quality index |
+ | `GET /compare?city1=X&city2=Y` | Compare cities |
+ | `GET /history/{city}` | Query history |
+ | `GET /top` | Leaderboard |
+diff --git a/requirements.txt b/requirements.txt
+index adce7fc..a256cd2 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -4,3 +4,5 @@ python-dotenv==1.2.2
+ redis==8.0.1
+ slowapi==0.1.10
+ uvicorn==0.49.0
++pytest==8.3.4
++pytest-asyncio==0.24.0
+diff --git a/test_main.py b/test_main.py
+new file mode 100644
+index 0000000..b8470c4
+--- /dev/null
++++ b/test_main.py
+@@ -0,0 +1,48 @@
++import os
++os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
++
++from unittest.mock import patch, AsyncMock
++from fastapi.testclient import TestClient
++from main import app
++
++client = TestClient(app)
++
++
++def test_version():
++    res = client.get("/version")
++    assert res.status_code == 200
++    body = res.json()
++    assert body["service"] == "weather-api"
++    assert body["version"] == "3.0.0"
++
++
++def test_health():
++    res = client.get("/health")
++    assert res.status_code == 200
++    assert "status" in res.json()
++
++
++@patch("main.fetch", new_callable=AsyncMock)
++@patch("main.cache_get", return_value=None)
++@patch("main.cache_set")
++@patch("main.log_query")
++def test_get_weather(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
++    mock_fetch.return_value = {
++        "main": {"temp": 28, "humidity": 60},
++        "weather": [{"description": "clear sky"}],
++        "coord": {"lat": 19.07, "lon": 72.87},
++    }
++    res = client.get("/weather/Mumbai")
++    assert res.status_code == 200
++    assert res.json()["source"] == "api"
++
++
++def test_history_not_found():
++    res = client.get("/history/NonexistentCityXYZ")
++    assert res.status_code in (404, 429)
++
++
++def test_top_leaderboard_shape():
++    res = client.get("/top")
++    assert res.status_code == 200
++    assert "leaderboard" in res.json()
+-- 
+2.43.0
+

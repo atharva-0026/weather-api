@@ -1,0 +1,31 @@
+name: Daily Weather Log
+
+on:
+  schedule:
+    - cron: '30 3 * * *'  # 9:00 AM IST daily
+  workflow_dispatch:
+
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Run logger
+        run: python daily_log.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add logs/
+          git diff --staged --quiet || git commit -m "Daily weather log $(date +'%Y-%m-%d')"
+          git push

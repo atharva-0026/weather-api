@@ -1,0 +1,343 @@
+From b701001a251ee67eaefa1bbcfdeb6b1b26e1cdd9 Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Tue, 14 Jul 2026 06:37:15 +0000
+Subject: [PATCH] Add API key auth with free/pro tier quotas
+
+---
+ CHANGELOG.md      |  1 +
+ README.md         |  5 ++++
+ auth.py           | 58 +++++++++++++++++++++++++++++++++++++++++++++++
+ main.py           | 35 +++++++++++++++++++++-------
+ static/index.html | 44 +++++++++++++++++++++++++++++++++++
+ test_main.py      | 47 ++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 182 insertions(+), 8 deletions(-)
+ create mode 100644 auth.py
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 3a83356..42aa929 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3,6 +3,7 @@
+ ## [Unreleased]
+ - Documented API endpoints
+ - Added /weather/{city}/ml-forecast: RandomForestRegressor trained on 1yr Open-Meteo historical data per city, cyclical day-of-year + trend features, retrains daily
++- Added API key issuance (POST /keys), quota tracking (GET /usage), free/pro tiers backed by Redis; optional on all weather endpoints, anonymous IP-based limiting still works unchanged
+ 
+ ## [3.0.0] - 2026-07-13
+ - Added /weather/{city}/aqi endpoint for air quality index
+diff --git a/README.md b/README.md
+index 259a82f..a066d09 100644
+--- a/README.md
++++ b/README.md
+@@ -34,6 +34,11 @@ docker compose up --build
+ | `GET /weather/{city}/uv` | UV index |
+ | `GET /weather/{city}/aqi` | Air quality index |
+ | `GET /weather/{city}/ml-forecast?days=N` | ML temperature forecast (N=1-14) |
++| `POST /keys?tier=free\|pro` | Create an API key |
++| `GET /usage` | Check quota usage (`x-api-key` header) |
++
++## API Keys & Quotas
++Every endpoint works anonymously under the existing per-IP rate limit. Optionally pass an `x-api-key` header (get one from `POST /keys`) to track usage against a daily quota instead: free tier is 200 requests/day, pro is 2000/day. Quotas reset at midnight UTC.
+ | `GET /compare?city1=X&city2=Y` | Compare cities |
+ | `GET /history/{city}` | Query history |
+ | `GET /top` | Leaderboard |
+diff --git a/auth.py b/auth.py
+new file mode 100644
+index 0000000..5857f6a
+--- /dev/null
++++ b/auth.py
+@@ -0,0 +1,58 @@
++"""
++API key issuance and daily quota tracking, backed by Redis.
++
++Keys are opaque tokens stored as a Redis hash `apikey:{key}` with a tier
++and creation date. Usage is tracked per key per day at `usage:{key}:{date}`
++with a 24h TTL, so quotas reset automatically at midnight UTC.
++"""
++
++import secrets
++from datetime import date, datetime
++
++from fastapi import HTTPException
++
++TIERS = {
++    "free": 200,
++    "pro": 2000,
++}
++
++
++def generate_api_key() -> str:
++    return "wapi_" + secrets.token_urlsafe(24)
++
++
++def create_key(r, tier: str = "free") -> dict:
++    if tier not in TIERS:
++        tier = "free"
++    key = generate_api_key()
++    r.hset(f"apikey:{key}", mapping={"tier": tier, "created": datetime.utcnow().isoformat()})
++    return {"api_key": key, "tier": tier, "daily_limit": TIERS[tier]}
++
++
++def _usage_key(api_key: str) -> str:
++    return f"usage:{api_key}:{date.today().isoformat()}"
++
++
++def validate_and_track(r, api_key: str) -> dict:
++    meta = r.hgetall(f"apikey:{api_key}")
++    if not meta:
++        raise HTTPException(status_code=401, detail="Invalid API key")
++    tier = meta.get("tier", "free")
++    limit = TIERS.get(tier, TIERS["free"])
++    usage_key = _usage_key(api_key)
++    count = r.incr(usage_key)
++    if count == 1:
++        r.expire(usage_key, 86400)
++    if count > limit:
++        raise HTTPException(status_code=429, detail=f"Daily quota exceeded ({limit} requests/day on {tier} tier)")
++    return {"tier": tier, "used": count, "limit": limit}
++
++
++def get_usage(r, api_key: str) -> dict:
++    meta = r.hgetall(f"apikey:{api_key}")
++    if not meta:
++        raise HTTPException(status_code=401, detail="Invalid API key")
++    tier = meta.get("tier", "free")
++    limit = TIERS.get(tier, TIERS["free"])
++    count = int(r.get(_usage_key(api_key)) or 0)
++    return {"tier": tier, "used": count, "limit": limit, "remaining": max(0, limit - count)}
+diff --git a/main.py b/main.py
+index 2e4a54e..59a1810 100644
+--- a/main.py
++++ b/main.py
+@@ -1,12 +1,14 @@
+-from fastapi import FastAPI, HTTPException, Request, Query
++from fastapi import FastAPI, HTTPException, Request, Query, Header, Depends
+ from slowapi import Limiter, _rate_limit_exceeded_handler
+ from slowapi.util import get_remote_address
+ from slowapi.errors import RateLimitExceeded
+ import httpx, redis, json, os, asyncio, logging
+ from dotenv import load_dotenv
+ from datetime import datetime
++from typing import Optional
+ 
+ from ml_forecast import get_or_train_model, predict_next_days
++from auth import create_key, validate_and_track, get_usage, TIERS
+ 
+ load_dotenv()
+ API_KEY = os.getenv("OPENWEATHER_API_KEY")
+@@ -22,6 +24,14 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+ 
+ r = redis.from_url(os.getenv("REDIS_URL", f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"), decode_responses=True)
+ 
++async def api_key_gate(x_api_key: Optional[str] = Header(default=None)):
++    """Optional API key dependency. If a key is supplied it must be valid
++    and under quota; anonymous requests fall through to the existing
++    per-IP rate limiter untouched."""
++    if x_api_key is None:
++        return None
++    return validate_and_track(r, x_api_key)
++
+ async def fetch(url, params):
+     async with httpx.AsyncClient() as client:
+         res = await client.get(url, params={**params, "appid": API_KEY})
+@@ -67,9 +77,18 @@ async def health():
+ async def version():
+     return {"version": "3.0.0", "service": "weather-api"}
+ 
++@app.post("/keys", summary="Create an API key")
++@limiter.limit("5/hour")
++async def create_api_key(request: Request, tier: str = Query("free", enum=list(TIERS.keys()))):
++    return create_key(r, tier)
++
++@app.get("/usage", summary="Check quota usage for an API key")
++async def usage(x_api_key: str = Header(...)):
++    return get_usage(r, x_api_key)
++
+ @app.get("/weather/{city}", summary="Current weather")
+ @limiter.limit("10/minute")
+-async def get_weather(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
++async def get_weather(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+     key = f"weather:{city}:{units}"
+     cached = cache_get(key)
+     if cached:
+@@ -81,7 +100,7 @@ async def get_weather(city: str, request: Request, units: str = Query("metric",
+ 
+ @app.get("/weather/{city}/forecast", summary="5-day forecast")
+ @limiter.limit("10/minute")
+-async def get_forecast(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
++async def get_forecast(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+     key = f"forecast:{city}:{units}"
+     cached = cache_get(key)
+     if cached:
+@@ -93,7 +112,7 @@ async def get_forecast(city: str, request: Request, units: str = Query("metric",
+ 
+ @app.get("/weather/{city}/alerts", summary="Severe weather alerts")
+ @limiter.limit("10/minute")
+-async def get_alerts(city: str, request: Request):
++async def get_alerts(city: str, request: Request, key_info=Depends(api_key_gate)):
+     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
+     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
+     async with httpx.AsyncClient() as client:
+@@ -103,7 +122,7 @@ async def get_alerts(city: str, request: Request):
+ 
+ @app.get("/weather/{city}/uv", summary="UV index")
+ @limiter.limit("10/minute")
+-async def get_uv(city: str, request: Request):
++async def get_uv(city: str, request: Request, key_info=Depends(api_key_gate)):
+     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
+     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
+     async with httpx.AsyncClient() as client:
+@@ -114,7 +133,7 @@ async def get_uv(city: str, request: Request):
+ 
+ @app.get("/weather/{city}/aqi", summary="Air quality index")
+ @limiter.limit("10/minute")
+-async def get_aqi(city: str, request: Request):
++async def get_aqi(city: str, request: Request, key_info=Depends(api_key_gate)):
+     key = f"aqi:{city}"
+     cached = cache_get(key)
+     if cached:
+@@ -133,7 +152,7 @@ async def get_aqi(city: str, request: Request):
+ 
+ @app.get("/weather/{city}/ml-forecast", summary="ML-based temperature forecast")
+ @limiter.limit("5/minute")
+-async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le=14)):
++async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le=14), key_info=Depends(api_key_gate)):
+     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
+     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
+     try:
+@@ -146,7 +165,7 @@ async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le
+ 
+ @app.get("/compare", summary="Compare two cities")
+ @limiter.limit("10/minute")
+-async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"])):
++async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+     w1 = await fetch(f"{BASE_URL}/weather", {"q": city1, "units": units})
+     w2 = await fetch(f"{BASE_URL}/weather", {"q": city2, "units": units})
+     unit_label = "°C" if units == "metric" else "°F"
+diff --git a/static/index.html b/static/index.html
+index 7d2eed0..0f575af 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -96,6 +96,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+   <button class="tab" onclick="showTab('ml',event)">ML Forecast</button>
+   <button class="tab" onclick="showTab('compare',event)">Compare</button>
+   <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
++  <button class="tab" onclick="showTab('apikey',event)">API Key</button>
+ </div>
+ <div id="tab-current">
+   <div id="stats-strip"></div>
+@@ -122,6 +123,25 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+     <div id="top-result"><span class="loading">Loading...</span></div>
+   </div>
+ </div>
++<div id="tab-apikey" class="hidden">
++  <div class="card">
++    <div class="section-title">API Access</div>
++    <div style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Anonymous requests work fine under the shared rate limit. Generate a key for your own tracked daily quota.</div>
++    <div class="search-row" style="max-width:100%">
++      <select id="tier-select"><option value="free">Free — 200/day</option><option value="pro">Pro — 2000/day</option></select>
++      <button onclick="generateKey()">Generate Key</button>
++    </div>
++    <div id="key-result"></div>
++    <div style="margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem">
++      <div class="section-title">Check Usage</div>
++      <div class="search-row" style="max-width:100%">
++        <input id="usage-key-input" type="text" placeholder="Paste your API key..."/>
++        <button onclick="checkUsage()">Check</button>
++      </div>
++      <div id="usage-result"></div>
++    </div>
++  </div>
++</div>
+ <script>
+ const BASE='';
+ async function apiFetch(path){const res=await fetch(BASE+path);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');return data}
+@@ -181,6 +201,30 @@ async function loadTop(){
+ }
+ async function checkHealth(){try{const d=await apiFetch('/health');document.getElementById('health-badge').innerHTML=`<span class="health-dot"></span><span style="font-size:0.75rem;color:var(--success)">online · ${d.uptime}</span>`}catch{document.getElementById('health-badge').innerHTML=`<span style="font-size:0.75rem;color:var(--danger)">offline</span>`}}
+ function quickSearch(city){document.getElementById('city-input').value=city;search()}
++async function generateKey(){
++  const tier=document.getElementById('tier-select').value;
++  const box=document.getElementById('key-result');
++  box.innerHTML='<span class="loading">Generating...</span>';
++  try{
++    const res=await fetch(`${BASE}/keys?tier=${tier}`,{method:'POST'});
++    const d=await res.json();
++    if(!res.ok)throw new Error(d.detail||'Failed');
++    box.innerHTML=`<div style="margin-top:1rem;padding:1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.35rem">YOUR API KEY — save it, it won't be shown again</div><code style="color:var(--accent2);font-size:0.85rem;word-break:break-all">${d.api_key}</code><div style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem">${d.tier} tier · ${d.daily_limit} requests/day</div></div>`;
++  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
++}
++async function checkUsage(){
++  const key=document.getElementById('usage-key-input').value.trim();
++  const box=document.getElementById('usage-result');
++  if(!key){box.innerHTML='<div class="error">Enter a key first</div>';return}
++  box.innerHTML='<span class="loading">Checking...</span>';
++  try{
++    const res=await fetch(`${BASE}/usage`,{headers:{'x-api-key':key}});
++    const d=await res.json();
++    if(!res.ok)throw new Error(d.detail||'Failed');
++    const pct=Math.min(100,(d.used/d.limit)*100);
++    box.innerHTML=`<div style="margin-top:1rem"><div class="stats-grid"><div class="stat"><div class="stat-label">Used Today</div><div class="stat-value">${d.used}</div></div><div class="stat"><div class="stat-label">Limit</div><div class="stat-value">${d.limit}</div></div><div class="stat"><div class="stat-label">Remaining</div><div class="stat-value">${d.remaining}</div></div></div><div style="background:var(--bg);border-radius:999px;height:6px;margin-top:1rem;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--accent)"></div></div></div>`;
++  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
++}
+ async function loadStatsStrip(){
+   try{
+     const d=await apiFetch('/top');
+diff --git a/test_main.py b/test_main.py
+index b781a2d..36fe3f2 100644
+--- a/test_main.py
++++ b/test_main.py
+@@ -74,3 +74,50 @@ def test_ml_forecast_train_failure():
+         mock_train.side_effect = ValueError("Not enough historical data")
+         res = client.get("/weather/Mumbai/ml-forecast")
+         assert res.status_code == 502
++
++
++def test_create_api_key():
++    res = client.post("/keys?tier=free")
++    assert res.status_code == 200
++    body = res.json()
++    assert body["api_key"].startswith("wapi_")
++    assert body["tier"] == "free"
++    assert body["daily_limit"] == 200
++
++
++def test_usage_invalid_key():
++    res = client.get("/usage", headers={"x-api-key": "not_a_real_key"})
++    assert res.status_code == 401
++
++
++def test_usage_valid_key():
++    key = client.post("/keys?tier=free").json()["api_key"]
++    res = client.get("/usage", headers={"x-api-key": key})
++    assert res.status_code == 200
++    assert res.json()["limit"] == 200
++
++
++@patch("main.fetch", new_callable=AsyncMock)
++@patch("main.cache_get", return_value=None)
++@patch("main.cache_set")
++@patch("main.log_query")
++def test_weather_with_valid_api_key(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
++    key = client.post("/keys?tier=free").json()["api_key"]
++    mock_fetch.return_value = {
++        "main": {"temp": 28, "humidity": 60},
++        "weather": [{"description": "clear sky"}],
++        "coord": {"lat": 19.07, "lon": 72.87},
++    }
++    res = client.get("/weather/Mumbai", headers={"x-api-key": key})
++    assert res.status_code == 200
++    usage = client.get("/usage", headers={"x-api-key": key}).json()
++    assert usage["used"] == 1
++
++
++@patch("main.fetch", new_callable=AsyncMock)
++@patch("main.cache_get", return_value=None)
++@patch("main.cache_set")
++@patch("main.log_query")
++def test_weather_with_invalid_api_key(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
++    res = client.get("/weather/Mumbai", headers={"x-api-key": "bogus_key"})
++    assert res.status_code == 401
+-- 
+2.43.0
+

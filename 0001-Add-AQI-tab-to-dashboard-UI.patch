@@ -1,0 +1,55 @@
+From 9318b79a498fdd9c804dd546d898fb1d754c05e6 Mon Sep 17 00:00:00 2001
+From: Atharva Gilbile <atharva.gilbile@example.com>
+Date: Mon, 13 Jul 2026 11:18:48 +0000
+Subject: [PATCH] Add AQI tab to dashboard UI
+
+---
+ static/index.html | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/static/index.html b/static/index.html
+index 9e2809e..09c6812 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -54,6 +54,12 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+ .forecast-time{font-size:0.7rem;color:var(--muted);margin-bottom:0.5rem}
+ .forecast-temp{font-size:1.1rem;font-weight:600;color:var(--accent2)}
+ .forecast-desc{font-size:0.65rem;color:var(--muted);margin-top:0.25rem;text-transform:capitalize}
++.aqi-badge{display:inline-flex;align-items:center;justify-content:center;width:4rem;height:4rem;border-radius:50%;font-size:1.5rem;font-weight:700;margin-bottom:1rem}
++.aqi-1{background:rgba(16,185,129,0.15);color:var(--success)}
++.aqi-2{background:rgba(34,211,238,0.15);color:var(--accent2)}
++.aqi-3{background:rgba(245,158,11,0.15);color:var(--warn)}
++.aqi-4{background:rgba(239,68,68,0.15);color:var(--danger)}
++.aqi-5{background:rgba(239,68,68,0.25);color:var(--danger)}
+ </style>
+ </head>
+ <body>
+@@ -71,12 +77,14 @@ button:disabled{opacity:0.4;cursor:not-allowed}
+   <button class="tab active" onclick="showTab('current',event)">Current</button>
+   <button class="tab" onclick="showTab('forecast',event)">Forecast</button>
+   <button class="tab" onclick="showTab('uv',event)">UV Index</button>
++  <button class="tab" onclick="showTab('aqi',event)">Air Quality</button>
+   <button class="tab" onclick="showTab('compare',event)">Compare</button>
+   <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
+ </div>
+ <div id="tab-current"><div id="current-result"></div></div>
+ <div id="tab-forecast" class="hidden"><div id="forecast-result"></div></div>
+ <div id="tab-uv" class="hidden"><div id="uv-result"></div></div>
++<div id="tab-aqi" class="hidden"><div id="aqi-result"></div></div>
+ <div id="tab-compare" class="hidden">
+   <div class="card">
+     <div class="section-title">Compare Two Cities</div>
+@@ -115,6 +123,10 @@ async function search(){
+     const uvVal=uv.uv_index;const uvPct=Math.min(uvVal/15,1)*100;
+     const uvLabel=uvVal<3?'Low':uvVal<6?'Moderate':uvVal<8?'High':uvVal<11?'Very High':'Extreme';
+     document.getElementById('uv-result').innerHTML=`<div class="card"><div class="section-title">UV Index — ${d.name}</div><div style="font-size:2.5rem;font-weight:700;color:var(--warn);margin-bottom:0.5rem">${uvVal.toFixed(1)}</div><div style="color:var(--muted);margin-bottom:1rem">${uvLabel}</div><div class="uv-bar"><div class="uv-dot" style="left:${uvPct}%"></div></div><div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:0.7rem;color:var(--muted)"><span>Low</span><span>Moderate</span><span>High</span><span>Extreme</span></div></div>`;
++    const aqi=await apiFetch(`/weather/${city}/aqi`);
++    const aqiLabels={1:'Good',2:'Fair',3:'Moderate',4:'Poor',5:'Very Poor'};
++    const c=aqi.components||{};
++    document.getElementById('aqi-result').innerHTML=`<div class="card"><div class="section-title">Air Quality — ${d.name}</div><div class="aqi-badge aqi-${aqi.aqi}">${aqi.aqi}</div><div style="color:var(--muted);margin-bottom:1rem">${aqiLabels[aqi.aqi]||'Unknown'}</div><div class="stats-grid"><div class="stat"><div class="stat-label">PM2.5</div><div class="stat-value">${c.pm2_5?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">PM10</div><div class="stat-value">${c.pm10?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">O3</div><div class="stat-value">${c.o3?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">NO2</div><div class="stat-value">${c.no2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">SO2</div><div class="stat-value">${c.so2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">CO</div><div class="stat-value">${c.co?.toFixed(1)??'—'}</div></div></div></div>`;
+   }catch(e){document.getElementById('current-result').innerHTML=`<div class="error">${e.message}</div>`}
+   btn.disabled=false;btn.textContent='Search'
+ }
+-- 
+2.43.0
+
