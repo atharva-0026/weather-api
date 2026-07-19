@@ -99,6 +99,24 @@ async def get_weather(city: str, request: Request, units: str = Query("metric", 
     log_query(city, "/weather")
     return {**data, "source": "api"}
 
+@app.get("/weather/{city}/summary", summary="Plain-English one-line weather summary")
+@limiter.limit("10/minute")
+async def get_summary(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+    key = f"weather:{city}:{units}"
+    data = cache_get(key)
+    if not data:
+        data = await fetch(f"{BASE_URL}/weather", {"q": city, "units": units})
+        cache_set(key, data)
+    temp = data["main"]["temp"]
+    feels_like = data["main"]["feels_like"]
+    condition = data["weather"][0]["description"]
+    unit_label = "°C" if units == "metric" else "°F"
+    log_query(city, "/summary")
+    return {
+        "city": city,
+        "summary": f"{condition.capitalize()} in {data.get('name', city)}, {temp}{unit_label} (feels like {feels_like}{unit_label})."
+    }
+
 @app.get("/weather/{city}/forecast", summary="5-day forecast")
 @limiter.limit("10/minute")
 async def get_forecast(city: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):

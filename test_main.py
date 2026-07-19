@@ -37,6 +37,25 @@ def test_get_weather(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
     assert res.json()["source"] == "api"
 
 
+@patch("main.fetch", new_callable=AsyncMock)
+@patch("main.cache_get", return_value=None)
+@patch("main.cache_set")
+@patch("main.log_query")
+def test_get_summary(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
+    mock_fetch.return_value = {
+        "name": "Mumbai",
+        "main": {"temp": 28, "feels_like": 30},
+        "weather": [{"description": "clear sky"}],
+        "coord": {"lat": 19.07, "lon": 72.87},
+    }
+    res = client.get("/weather/Mumbai/summary")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["city"] == "Mumbai"
+    assert "Clear sky in Mumbai" in body["summary"]
+    assert "feels like" in body["summary"]
+
+
 def test_history_not_found():
     res = client.get("/history/NonexistentCityXYZ")
     assert res.status_code in (404, 429)

@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Added /weather/{city}/summary: plain-English one-line weather summary
 - Documented API endpoints
 - Added /weather/{city}/ml-forecast: RandomForestRegressor trained on 1yr Open-Meteo historical data per city, cyclical day-of-year + trend features, retrains daily
 - Added API key issuance (POST /keys), quota tracking (GET /usage), free/pro tiers backed by Redis; optional on all weather endpoints, anonymous IP-based limiting still works unchanged
