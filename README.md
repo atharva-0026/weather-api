@@ -1,5 +1,7 @@
 # Weather API
 
+![Python](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-005571) ![Redis](https://img.shields.io/badge/Redis-cache-red)
+
 **Live:** https://weather-api-production-fc6a.up.railway.app/ui
 
 Production-grade REST API for real-time weather data with a dark dashboard UI.
