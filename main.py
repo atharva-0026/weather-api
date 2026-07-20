@@ -76,7 +76,7 @@ async def health():
 
 @app.get("/version", summary="API version")
 async def version():
-    return {"version": "3.0.0", "service": "weather-api"}
+    return {"version": "3.1.0", "service": "weather-api"}
 
 @app.post("/keys", summary="Create an API key")
 @limiter.limit("5/hour")
