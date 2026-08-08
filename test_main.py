@@ -9,11 +9,16 @@ client = TestClient(app)
 
 
 def test_version():
+    """Version must match main.API_VERSION exactly — regression test for
+    the endpoint drifting from the FastAPI app's declared version."""
+    from main import API_VERSION
+
     res = client.get("/version")
     assert res.status_code == 200
     body = res.json()
     assert body["service"] == "weather-api"
-    assert body["version"] == "3.0.0"
+    assert body["version"] == API_VERSION
+    assert app.version == API_VERSION
 
 
 def test_health():
