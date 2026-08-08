@@ -1,10 +1,7 @@
 .env
-__pycache__/
-*.pyc
-.env
 venv/
 __pycache__/
-.pytest_cache/
 *.pyc
-.env
-requests.log
+.pytest_cache/
+*.log
+*.patch
