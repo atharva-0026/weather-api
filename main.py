@@ -17,8 +17,13 @@ BASE_URL = "https://api.openweathermap.org/data/2.5"
 
 logging.basicConfig(filename="requests.log", level=logging.INFO, format="%(asctime)s %(message)s")
 
+# Single source of truth for the API version — keep FastAPI's declared
+# version and the /version endpoint in sync (they drifted apart before:
+# 3.0.0 vs 3.1.0, see CHANGELOG.md).
+API_VERSION = "3.1.0"
+
 start_time = datetime.utcnow()
-app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version="3.0.0")
+app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version=API_VERSION)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -76,7 +81,7 @@ async def health():
 
 @app.get("/version", summary="API version")
 async def version():
-    return {"version": "3.1.0", "service": "weather-api"}
+    return {"version": API_VERSION, "service": "weather-api"}
 
 @app.post("/keys", summary="Create an API key")
 @limiter.limit("5/hour")
