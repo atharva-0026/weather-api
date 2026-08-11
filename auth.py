@@ -7,7 +7,7 @@ with a 24h TTL, so quotas reset automatically at midnight UTC.
 """
 
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
 
@@ -25,7 +25,7 @@ def create_key(r, tier: str = "free") -> dict:
     if tier not in TIERS:
         tier = "free"
     key = generate_api_key()
-    r.hset(f"apikey:{key}", mapping={"tier": tier, "created": datetime.utcnow().isoformat()})
+    r.hset(f"apikey:{key}", mapping={"tier": tier, "created": datetime.now(timezone.utc).isoformat()})
     return {"api_key": key, "tier": tier, "daily_limit": TIERS[tier]}
 
 
