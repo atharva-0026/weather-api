@@ -17,7 +17,7 @@ cooldown even if it's still broken.
 
 import os
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 OPENWEATHER_KEY = os.getenv("OPENWEATHER_API_KEY")
 WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY")
@@ -54,7 +54,7 @@ def get_state(r, name: str) -> str:
     if not opened_at:
         return CLOSED
 
-    elapsed = datetime.utcnow() - datetime.fromisoformat(opened_at)
+    elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(opened_at)
     if elapsed < timedelta(seconds=COOLDOWN_SECONDS):
         return OPEN
 
@@ -88,10 +88,10 @@ def record_failure(r, name: str):
     state_before = get_state(r, name)
     fails = r.hincrby(key, "fails", 1)
     if fails == 1:
-        r.hset(key, "opened_at", datetime.utcnow().isoformat())
+        r.hset(key, "opened_at", datetime.now(timezone.utc).isoformat())
     if state_before == HALF_OPEN:
         # trial failed - reopen the breaker with a fresh cooldown window
-        r.hset(key, "opened_at", datetime.utcnow().isoformat())
+        r.hset(key, "opened_at", datetime.now(timezone.utc).isoformat())
         r.hdel(key, "trial_in_flight")
     r.expire(key, COOLDOWN_SECONDS * 2)
 

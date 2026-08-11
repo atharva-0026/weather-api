@@ -12,7 +12,7 @@ Uses fakeredis so it runs without a real Redis instance.
 
 import fakeredis
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import providers
 
@@ -49,7 +49,7 @@ def test_transitions_to_half_open_after_cooldown():
 
     # manually backdate opened_at to simulate cooldown having elapsed
     key = providers._breaker_key("openweather")
-    past = (datetime.utcnow() - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
     r.hset(key, "opened_at", past)
 
     assert providers.get_state(r, "openweather") == providers.HALF_OPEN
@@ -60,7 +60,7 @@ def test_half_open_success_resets_breaker():
     for _ in range(providers.FAILURE_THRESHOLD):
         providers.record_failure(r, "openweather")
     key = providers._breaker_key("openweather")
-    past = (datetime.utcnow() - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
     r.hset(key, "opened_at", past)
 
     assert providers.get_state(r, "openweather") == providers.HALF_OPEN
@@ -73,7 +73,7 @@ def test_half_open_failure_reopens_with_fresh_cooldown():
     for _ in range(providers.FAILURE_THRESHOLD):
         providers.record_failure(r, "openweather")
     key = providers._breaker_key("openweather")
-    past = (datetime.utcnow() - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
     r.hset(key, "opened_at", past)
 
     assert providers.get_state(r, "openweather") == providers.HALF_OPEN
@@ -87,7 +87,7 @@ def test_claim_trial_prevents_concurrent_half_open_requests():
     for _ in range(providers.FAILURE_THRESHOLD):
         providers.record_failure(r, "openweather")
     key = providers._breaker_key("openweather")
-    past = (datetime.utcnow() - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(seconds=providers.COOLDOWN_SECONDS + 1)).isoformat()
     r.hset(key, "opened_at", past)
 
     assert providers.get_state(r, "openweather") == providers.HALF_OPEN
