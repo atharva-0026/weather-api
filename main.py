@@ -4,7 +4,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import httpx, redis, json, os, asyncio, logging
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from ml_forecast import get_or_train_model, predict_next_days
@@ -22,7 +22,7 @@ logging.basicConfig(filename="requests.log", level=logging.INFO, format="%(ascti
 # 3.0.0 vs 3.1.0, see CHANGELOG.md).
 API_VERSION = "3.1.0"
 
-start_time = datetime.utcnow()
+start_time = datetime.now(timezone.utc)
 app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version=API_VERSION)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -54,7 +54,7 @@ def cache_set(key, val, ttl=300):
     r.setex(key, ttl, json.dumps(val))
 
 def log_query(city, endpoint):
-    r.lpush(f"history:{city}", datetime.utcnow().isoformat())
+    r.lpush(f"history:{city}", datetime.now(timezone.utc).isoformat())
     r.ltrim(f"history:{city}", 0, 49)
     r.zincrby("leaderboard", 1, city)
     logging.info(f"{endpoint} {city}")
@@ -76,7 +76,7 @@ async def startup():
 
 @app.get("/health", summary="Health check")
 async def health():
-    uptime = str(datetime.utcnow() - start_time).split(".")[0]
+    uptime = str(datetime.now(timezone.utc) - start_time).split(".")[0]
     return {"status": "ok", "uptime": uptime, "redis": "connected" if r.ping() else "disconnected"}
 
 @app.get("/version", summary="API version")
