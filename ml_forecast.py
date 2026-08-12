@@ -16,7 +16,7 @@ from sklearn.ensemble import RandomForestRegressor
 HISTORICAL_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 # city -> {"model": RandomForestRegressor, "trained_on": date, "last_date": date}
-_model_cache = {}
+_model_cache: dict[str, dict] = {}
 
 
 async def fetch_historical(lat: float, lon: float, days: int = 365) -> dict:
