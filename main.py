@@ -67,8 +67,8 @@ async def refresh_cache():
             try:
                 data = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
                 cache_set(f"weather:{city}:metric", data)
-            except:
-                pass
+            except Exception:
+                logging.warning(f"refresh_cache failed for city={city}", exc_info=True)
 
 @app.on_event("startup")
 async def startup():
