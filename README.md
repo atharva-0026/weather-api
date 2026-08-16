@@ -32,6 +32,7 @@ docker compose up --build
 | Endpoint | Description |
 |----------|-------------|
 | `GET /weather/{city}` | Current weather |
+| `GET /weather/{city}/summary` | Plain-English one-line weather summary |
 | `GET /weather/{city}/forecast` | 5-day forecast |
 | `GET /weather/{city}/alerts` | Severe alerts |
 | `GET /weather/{city}/uv` | UV index |
@@ -41,16 +42,17 @@ docker compose up --build
 | `GET /usage` | Check quota usage (`x-api-key` header) |
 | `GET /weather/{city}/failover` | Weather with automatic provider failover |
 | `GET /providers/status` | Health of each weather provider |
+| `GET /compare?city1=X&city2=Y` | Compare cities |
+| `GET /history/{city}` | Query history |
+| `GET /top` | Leaderboard |
+| `GET /health` | Health check |
+| `GET /version` | API version |
+| `GET /ui` | Dashboard |
+| `GET /docs` | Swagger UI |
 
 ## API Keys & Quotas
 Every endpoint works anonymously under the existing per-IP rate limit. Optionally pass an `x-api-key` header (get one from `POST /keys`) to track usage against a daily quota instead: free tier is 200 requests/day, pro is 2000/day. Quotas reset at midnight UTC.
 
 ## Multi-Provider Failover
 `/weather/{city}/failover` tries OpenWeather first, then WeatherAPI.com (set `WEATHERAPI_KEY` to enable), then Open-Meteo (free, no key, always available as a last resort). Each provider trips a circuit breaker after 3 consecutive failures and is skipped for 5 minutes. After the cooldown, one trial request is let through (half-open state) before the provider is fully trusted again — a failed trial reopens the breaker with a fresh cooldown. Check `/providers/status` to see current health (`closed`, `open`, or `half_open` per provider).
-| `GET /compare?city1=X&city2=Y` | Compare cities |
-| `GET /history/{city}` | Query history |
-| `GET /top` | Leaderboard |
-| `GET /health` | Health check |
-| `GET /ui` | Dashboard |
-| `GET /docs` | Swagger UI |
 
