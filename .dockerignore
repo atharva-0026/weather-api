@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+*.patch
+.github/
+README.md
+SECURITY.md
+CHANGELOG.md
+tests/
+test_*.py
