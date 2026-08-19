@@ -1,6 +1,6 @@
 # Weather API
 
-![Python](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-005571) ![Redis](https://img.shields.io/badge/Redis-cache-red)
+![Python](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-005571) ![Redis](https://img.shields.io/badge/Redis-cache-red) ![Tests](https://github.com/atharva-0026/weather-api/actions/workflows/tests.yml/badge.svg)
 
 **Live:** https://weather-api-production-fc6a.up.railway.app/ui
 
