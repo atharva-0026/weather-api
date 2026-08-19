@@ -56,3 +56,17 @@ def test_readme_documents_every_endpoint():
             missing.append(path)
 
     assert not missing, f"Endpoints missing from README.md: {missing}"
+
+
+def test_daily_log_uses_correct_weather_url_shape():
+    """Regression test: daily_log.py previously called
+    /weather?city=Pune (query param), but the actual route in main.py
+    is path-based (/weather/{city}). Every single day since launch
+    silently logged {"error": 404} instead of real weather data. Must
+    use the path form: /weather/<city>."""
+    content = _read("daily_log.py")
+    assert "params={\"city\"" not in content, (
+        "daily_log.py must not use the query-param form ?city=... — "
+        "the actual route is path-based, see main.py"
+    )
+    assert "/weather/Pune" in content or "/weather/{" in content
