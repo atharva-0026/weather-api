@@ -35,4 +35,4 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/0
           OPENWEATHER_API_KEY: test_key
-        run: pytest -v
+        run: pytest -v --cov=. --cov-report=term-missing
