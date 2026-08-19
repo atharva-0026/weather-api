@@ -2,6 +2,7 @@ import requests
 import datetime
 import json
 import os
+import sys
 
 API_BASE = "https://weather-api-production-fc6a.up.railway.app"
 LOG_DIR = "logs"
@@ -26,6 +27,14 @@ def main():
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     print(f"Logged {today}")
+
+    # Every day from 2026-07-18 to 2026-08-16 silently logged
+    # {"error": 404} due to a URL bug (fixed above) with no failure
+    # signal anywhere. Exit non-zero on error so a broken fetch shows
+    # up as a failed GitHub Actions run instead of a silent bad commit.
+    if "error" in data["pune_weather"]:
+        print(f"WARNING: fetch failed: {data['pune_weather']['error']}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
