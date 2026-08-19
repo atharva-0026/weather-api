@@ -56,3 +56,6 @@ Every endpoint works anonymously under the existing per-IP rate limit. Optionall
 ## Multi-Provider Failover
 `/weather/{city}/failover` tries OpenWeather first, then WeatherAPI.com (set `WEATHERAPI_KEY` to enable), then Open-Meteo (free, no key, always available as a last resort). Each provider trips a circuit breaker after 3 consecutive failures and is skipped for 5 minutes. After the cooldown, one trial request is let through (half-open state) before the provider is fully trusted again — a failed trial reopens the breaker with a fresh cooldown. Check `/providers/status` to see current health (`closed`, `open`, or `half_open` per provider).
 
+## Known Issues
+See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for a tracked bug in the daily logging automation (fixed, but the history is worth knowing about).
+
