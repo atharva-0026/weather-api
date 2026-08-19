@@ -8,7 +8,7 @@ LOG_DIR = "logs"
 
 def fetch_stats():
     try:
-        r = requests.get(f"{API_BASE}/weather", params={"city": "Pune"}, timeout=10)
+        r = requests.get(f"{API_BASE}/weather/Pune", timeout=10)
         weather = r.json() if r.status_code == 200 else {"error": r.status_code}
     except Exception as e:
         weather = {"error": str(e)}
