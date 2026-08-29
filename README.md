@@ -25,6 +25,7 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
 
 ## Run
 ```bash
+cp .env.example .env   # optional — fill in provider API keys if you have them
 docker compose up --build
 ```
 
