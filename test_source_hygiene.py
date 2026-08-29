@@ -70,3 +70,16 @@ def test_daily_log_uses_correct_weather_url_shape():
         "the actual route is path-based, see main.py"
     )
     assert "/weather/Pune" in content or "/weather/{" in content
+
+
+def test_docker_compose_env_file_is_optional():
+    """Regression test: docker-compose.yml's `env_file: .env` previously
+    hard-failed `docker compose up --build` on a fresh clone (no .env
+    exists until you copy .env.example), directly contradicting the
+    README's one-line run instructions. Must use the long-form
+    `required: false` syntax."""
+    content = _read("docker-compose.yml")
+    assert "required: false" in content or "required: False" in content, (
+        "docker-compose.yml's env_file must be optional (required: false) "
+        "so a fresh clone with no .env doesn't hard-fail"
+    )
