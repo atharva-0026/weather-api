@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Query, Header, Depends
+from fastapi import FastAPI, HTTPException, Request, Query, Header, Depends, Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -26,7 +26,25 @@ start_time = datetime.now(timezone.utc)
 app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version=API_VERSION)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _handle_rate_limit_exceeded(request: Request, exc: Exception) -> Response:
+    """
+    Thin wrapper around slowapi's own handler.
+
+    slowapi's _rate_limit_exceeded_handler is typed as
+    (Request, RateLimitExceeded) -> Response, which doesn't match
+    Starlette's expected generic (Request, Exception) -> Response
+    signature for add_exception_handler — a stub imprecision in
+    slowapi, not a real bug. This wrapper has the exact signature
+    Starlette expects, so mypy is satisfied without weakening any
+    actual runtime behavior.
+    """
+    assert isinstance(exc, RateLimitExceeded)
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _handle_rate_limit_exceeded)
 
 r = redis.from_url(os.getenv("REDIS_URL", f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"), decode_responses=True)
 
