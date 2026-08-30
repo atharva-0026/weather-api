@@ -22,7 +22,7 @@ _model_cache: dict[str, dict] = {}
 async def fetch_historical(lat: float, lon: float, days: int = 365) -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days)
-    params = {
+    params: dict[str, str | float] = {
         "latitude": lat,
         "longitude": lon,
         "start_date": start.isoformat(),
