@@ -83,3 +83,27 @@ def test_docker_compose_env_file_is_optional():
         "docker-compose.yml's env_file must be optional (required: false) "
         "so a fresh clone with no .env doesn't hard-fail"
     )
+
+
+def test_main_does_not_crash_with_empty_redis_url_env_var():
+    """Regression test: main.py previously used
+    os.getenv("REDIS_URL", fallback), which only falls back when the key
+    is completely absent — not when it's set to an empty string. On
+    Render, an env var left blank in the dashboard is set to "" rather
+    than unset, which crashed the app on boot with:
+    ValueError: Redis URL must specify one of the following schemes.
+    Must use `os.getenv("REDIS_URL") or fallback` instead."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import main"],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        env={**os.environ, "REDIS_URL": ""},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, (
+        f"main.py crashed on import with REDIS_URL='': {result.stderr[-500:]}"
+    )
