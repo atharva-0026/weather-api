@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-005571) ![Redis](https://img.shields.io/badge/Redis-cache-red) ![Tests](https://github.com/atharva-0026/weather-api/actions/workflows/tests.yml/badge.svg)
 
-**Live:** https://weather-api-production-fc6a.up.railway.app/ui
+**Live:** currently down — Railway's free trial expired and paused the deployment (see #1). Migrating to Render, see Deploy section below.
 
 Production-grade REST API for real-time weather data with a dark dashboard UI.
 
@@ -28,6 +28,16 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
 cp .env.example .env   # optional — fill in provider API keys if you have them
 docker compose up --build
 ```
+
+## Deploy (free tier: Render + Upstash)
+1. **Redis:** Create a free database at [upstash.com](https://upstash.com) → copy its `rediss://...` connection string.
+2. **Web service:** Push this repo to GitHub (already done), then in the [Render dashboard](https://dashboard.render.com) → New → Blueprint → connect this repo. Render reads `render.yaml` automatically.
+3. When prompted, fill in the dashboard-only env vars:
+   - `REDIS_URL` → the Upstash `rediss://` string from step 1
+   - `OPENWEATHER_API_KEY` / `WEATHERAPI_KEY` → optional, only needed for `/weather/{city}/failover`
+4. Render builds from the existing `Dockerfile` and deploys on its free web service plan. First deploy takes a few minutes; free-tier services spin down after 15 min of inactivity and cold-start on the next request (~30s).
+
+`redis.from_url()` already handles Upstash's `rediss://` TLS scheme automatically — no code changes needed for the Redis side.
 
 ## Endpoints
 | Endpoint | Description |

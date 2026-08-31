@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: weather-api
+    runtime: docker
+    plan: free
+    envVars:
+      - key: REDIS_URL
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: WEATHERAPI_KEY
+        sync: false
