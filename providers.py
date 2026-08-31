@@ -138,6 +138,7 @@ async def fetch_weatherapi(city: str, units: str) -> dict:
 async def fetch_openmeteo(city: str, units: str) -> dict:
     async with httpx.AsyncClient(timeout=10) as client:
         geo = await client.get(OPENMETEO_GEOCODE_URL, params={"name": city, "count": 1})
+        geo.raise_for_status()
         results = geo.json().get("results")
         if not results:
             raise RuntimeError("city not found")
@@ -148,11 +149,30 @@ async def fetch_openmeteo(city: str, units: str) -> dict:
             "current": "temperature_2m,relative_humidity_2m",
             "temperature_unit": temp_unit,
         })
-        current = res.json().get("current", {})
+        res.raise_for_status()
+        body = res.json()
+        current = body.get("current", {})
+        temp = current.get("temperature_2m")
+        humidity = current.get("relative_humidity_2m")
+
+        # Open-Meteo can return HTTP 200 with a valid-JSON error body (no
+        # "current" key at all) — e.g. when rate-limiting a shared IP,
+        # which is common on platforms like Render where many apps share
+        # outbound IPs. Silently returning {"temp": None, ...} looks like
+        # a successful reading of "unknown" instead of a real failure,
+        # and skips the circuit breaker / failover error tracking
+        # entirely. Raise so fetch_with_failover actually records this
+        # as a failure like any other provider error.
+        if temp is None or humidity is None:
+            raise RuntimeError(
+                f"Open-Meteo returned no current weather data (possible rate "
+                f"limit or API change): {body}"
+            )
+
         return {
             "city": name,
-            "temp": current.get("temperature_2m"),
-            "humidity": current.get("relative_humidity_2m"),
+            "temp": temp,
+            "humidity": humidity,
             "description": "—",
             "lat": lat,
             "lon": lon,
