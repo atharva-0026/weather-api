@@ -27,6 +27,21 @@ def test_health():
     assert "status" in res.json()
 
 
+def test_health_does_not_crash_when_redis_unreachable():
+    """Regression test: r.ping() raises ConnectionError/AuthenticationError
+    on failure rather than returning False. /health previously did
+    `"connected" if r.ping() else "disconnected"` with no try/except,
+    so a genuinely unreachable Redis (e.g. misconfigured REDIS_URL on
+    a fresh deploy) turned the health check itself into a 500 Internal
+    Server Error — exactly when you need it most to report status."""
+    with patch("main.r.ping", side_effect=ConnectionError("mocked unreachable")):
+        res = client.get("/health")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "ok"
+        assert body["redis"] == "disconnected"
+
+
 @patch("main.fetch", new_callable=AsyncMock)
 @patch("main.cache_get", return_value=None)
 @patch("main.cache_set")

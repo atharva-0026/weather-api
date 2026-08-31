@@ -98,7 +98,15 @@ async def startup():
 @app.get("/health", summary="Health check")
 async def health():
     uptime = str(datetime.now(timezone.utc) - start_time).split(".")[0]
-    return {"status": "ok", "uptime": uptime, "redis": "connected" if r.ping() else "disconnected"}
+    # r.ping() raises (ConnectionError, AuthenticationError, etc.) on
+    # failure rather than returning False, so this must be guarded — a
+    # health check's entire purpose is to report status gracefully, not
+    # 500 the moment the thing it's checking is actually down.
+    try:
+        redis_status = "connected" if r.ping() else "disconnected"
+    except Exception:
+        redis_status = "disconnected"
+    return {"status": "ok", "uptime": uptime, "redis": redis_status}
 
 @app.get("/version", summary="API version")
 async def version():
