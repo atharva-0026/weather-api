@@ -46,7 +46,10 @@ def _handle_rate_limit_exceeded(request: Request, exc: Exception) -> Response:
 
 app.add_exception_handler(RateLimitExceeded, _handle_rate_limit_exceeded)
 
-r = redis.from_url(os.getenv("REDIS_URL", f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"), decode_responses=True)
+r = redis.from_url(
+    os.getenv("REDIS_URL") or f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0",
+    decode_responses=True,
+)
 
 async def api_key_gate(x_api_key: Optional[str] = Header(default=None)):
     """Optional API key dependency. If a key is supplied it must be valid
