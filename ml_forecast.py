@@ -48,7 +48,7 @@ def train_model(daily: dict):
     dates = [date.fromisoformat(d) for d in daily["time"]]
     y = np.array(daily["temperature_2m_max"], dtype=float)
     mask = ~np.isnan(y)
-    dates_clean = [d for d, m in zip(dates, mask) if m]
+    dates_clean = [d for d, m in zip(dates, mask, strict=True) if m]
     X = _build_features(dates_clean)
     y = y[mask]
     if len(y) < 30:
@@ -74,5 +74,5 @@ def predict_next_days(model, last_date: date, n: int = 5) -> list:
     preds = model.predict(X)
     return [
         {"date": d.isoformat(), "predicted_temp_max": round(float(p), 1)}
-        for d, p in zip(future_dates, preds)
+        for d, p in zip(future_dates, preds, strict=True)
     ]
