@@ -7,7 +7,7 @@ with a 24h TTL, so quotas reset automatically at midnight UTC.
 """
 
 import secrets
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
@@ -30,7 +30,12 @@ def create_key(r, tier: str = "free") -> dict:
 
 
 def _usage_key(api_key: str) -> str:
-    return f"usage:{api_key}:{date.today().isoformat()}"
+    # Must use UTC, not date.today() (local system date) — the module
+    # docstring promises quotas "reset automatically at midnight UTC".
+    # date.today() would silently reset at local midnight instead if
+    # this ever runs somewhere with a non-UTC system timezone.
+    today_utc = datetime.now(timezone.utc).date()
+    return f"usage:{api_key}:{today_utc.isoformat()}"
 
 
 def validate_and_track(r, api_key: str) -> dict:
