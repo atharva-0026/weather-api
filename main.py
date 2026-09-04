@@ -210,8 +210,8 @@ async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le
     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
     try:
         model, last_date = await get_or_train_model(city, lat, lon)
-    except Exception:
-        raise HTTPException(status_code=502, detail="Could not train forecast model, try again later")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail="Could not train forecast model, try again later") from e
     predictions = predict_next_days(model, last_date, days)
     log_query(city, "/ml-forecast")
     return {"city": city, "model": "RandomForestRegressor", "trained_through": last_date.isoformat(), "predictions": predictions}
@@ -222,7 +222,7 @@ async def get_weather_failover(city: str, request: Request, units: str = Query("
     try:
         data = await fetch_with_failover(r, city, units)
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
     log_query(city, "/failover")
     return data
 
