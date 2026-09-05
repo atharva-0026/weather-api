@@ -233,6 +233,15 @@ async def providers_status():
 @app.get("/compare", summary="Compare two cities")
 @limiter.limit("10/minute")
 async def compare(city1: str, city2: str, request: Request, units: str = Query("metric", enum=["metric", "imperial"]), key_info=Depends(api_key_gate)):
+    # Both city names become dict keys in the response below. If they're
+    # the same (even differing only by case, since the comparison here
+    # is intentionally case-insensitive to catch "Pune" vs "pune" too),
+    # a plain dict literal {city1: ..., city2: ...} silently collapses
+    # to ONE key - the second fetch's data overwrites the first with no
+    # error, silently dropping half the comparison and wasting an API
+    # call. Reject it explicitly instead.
+    if city1.strip().lower() == city2.strip().lower():
+        raise HTTPException(status_code=400, detail="city1 and city2 must be different cities")
     w1 = await fetch(f"{BASE_URL}/weather", {"q": city1, "units": units})
     w2 = await fetch(f"{BASE_URL}/weather", {"q": city2, "units": units})
     unit_label = "°C" if units == "metric" else "°F"
