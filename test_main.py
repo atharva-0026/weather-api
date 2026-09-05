@@ -81,6 +81,27 @@ def test_history_not_found():
     assert res.status_code in (404, 429)
 
 
+def test_compare_rejects_identical_cities():
+    """Regression test: /compare built {city1: {...}, city2: {...}} as
+    its response - if city1 == city2, Python dict literals silently
+    collapse to one key, dropping half the comparison with no error.
+    Must be rejected with a clear 400 instead."""
+    res = client.get("/compare?city1=Pune&city2=Pune")
+    assert res.status_code in (400, 429)
+    if res.status_code == 400:
+        assert "different cities" in res.json()["detail"]
+
+
+def test_compare_rejects_identical_cities_different_case():
+    res = client.get("/compare?city1=Pune&city2=PUNE")
+    assert res.status_code in (400, 429)
+
+
+def test_compare_rejects_identical_cities_with_whitespace():
+    res = client.get("/compare?city1= Pune &city2=Pune")
+    assert res.status_code in (400, 429)
+
+
 def test_top_leaderboard_shape():
     res = client.get("/top")
     assert res.status_code == 200
