@@ -15,8 +15,21 @@ from sklearn.ensemble import RandomForestRegressor
 
 HISTORICAL_URL = "https://archive-api.open-meteo.com/v1/archive"
 
-# city -> {"model": RandomForestRegressor, "trained_on": date, "last_date": date}
-_model_cache: dict[str, dict] = {}
+# cache key -> {"model": RandomForestRegressor, "trained_on": date, "last_date": date}
+# Cache key is (normalized city, rounded lat, rounded lon), NOT city
+# name alone. Keying on city string only had two problems: (1) case
+# or whitespace variants of the same city ("Pune" vs "pune") wasted a
+# full retrain unnecessarily, and (2) more importantly, if the same
+# city string ever geocoded to different coordinates between calls
+# (ambiguous city names, geocoding index changes), the cache would
+# silently serve a model trained for the WRONG location with zero
+# validation that the cached model's original coordinates still match
+# what the current request actually resolved to.
+_model_cache: dict[tuple[str, float, float], dict] = {}
+
+
+def _cache_key(city: str, lat: float, lon: float) -> tuple[str, float, float]:
+    return (city.strip().lower(), round(lat, 3), round(lon, 3))
 
 
 async def fetch_historical(lat: float, lon: float, days: int = 365) -> dict:
@@ -59,12 +72,13 @@ def train_model(daily: dict):
 
 
 async def get_or_train_model(city: str, lat: float, lon: float):
-    cached = _model_cache.get(city)
+    key = _cache_key(city, lat, lon)
+    cached = _model_cache.get(key)
     if cached and cached["trained_on"] == date.today():
         return cached["model"], cached["last_date"]
     data = await fetch_historical(lat, lon)
     model, last_date = train_model(data["daily"])
-    _model_cache[city] = {"model": model, "trained_on": date.today(), "last_date": last_date}
+    _model_cache[key] = {"model": model, "trained_on": date.today(), "last_date": last_date}
     return model, last_date
 
 
