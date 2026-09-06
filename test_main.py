@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
+import httpx
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from main import app, r
@@ -224,3 +225,63 @@ def test_circuit_breaker_opens_after_threshold():
         record_failure(r, test_provider)
     assert is_open(r, test_provider) is True
     r.delete(f"provider_breaker:{test_provider}")
+
+
+class _FakeUpstreamResponse:
+    """Minimal stand-in for httpx.Response — just needs .json()."""
+    def __init__(self, data):
+        self._data = data
+
+    def json(self):
+        return self._data
+
+
+_GOOD_WEATHER = {
+    "main": {"temp": 25}, "weather": [{"description": "clear"}],
+    "coord": {"lat": 18.5, "lon": 73.8}, "cod": 200,
+}
+_OPENWEATHER_ERROR = {"cod": 401, "message": "Invalid API key"}
+
+
+@patch("main.fetch", new_callable=AsyncMock, return_value=_GOOD_WEATHER)
+@patch("main.log_query")
+def test_aqi_raises_502_on_upstream_error_instead_of_returning_null(mock_log, mock_fetch):
+    """Regression test: /aqi's second API call (air_pollution) was
+    previously used unvalidated — an upstream error silently produced
+    {"aqi": null} with HTTP 200 instead of raising."""
+    with patch("main.cache_get", return_value=None), patch("main.cache_set") as mock_cache_set:
+        with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=_FakeUpstreamResponse(_OPENWEATHER_ERROR)):
+            res = client.get("/weather/Pune/aqi")
+    assert res.status_code == 502
+    mock_cache_set.assert_not_called()
+
+
+@patch("main.fetch", new_callable=AsyncMock, return_value=_GOOD_WEATHER)
+@patch("main.cache_get", return_value=None)
+@patch("main.cache_set")
+@patch("main.log_query")
+def test_aqi_still_works_and_caches_normally_on_success(mock_log, mock_cache_set, mock_cache_get, mock_fetch):
+    good_response = {"list": [{"main": {"aqi": 2}, "components": {"co": 200}}]}
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=_FakeUpstreamResponse(good_response)):
+        res = client.get("/weather/Pune/aqi")
+    assert res.status_code == 200
+    assert res.json()["aqi"] == 2
+    mock_cache_set.assert_called_once()
+
+
+@patch("main.fetch", new_callable=AsyncMock, return_value=_GOOD_WEATHER)
+@patch("main.log_query")
+def test_uv_raises_502_on_upstream_error_instead_of_returning_null(mock_log, mock_fetch):
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=_FakeUpstreamResponse(_OPENWEATHER_ERROR)):
+        res = client.get("/weather/Pune/uv")
+    assert res.status_code == 502
+
+
+@patch("main.fetch", new_callable=AsyncMock, return_value=_GOOD_WEATHER)
+@patch("main.log_query")
+def test_alerts_raises_502_on_upstream_error_instead_of_returning_no_alerts(mock_log, mock_fetch):
+    """Regression test: previously indistinguishable from a genuinely
+    quiet weather day - both returned 'No active alerts'."""
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=_FakeUpstreamResponse(_OPENWEATHER_ERROR)):
+        res = client.get("/weather/Pune/alerts")
+    assert res.status_code == 502
