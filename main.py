@@ -67,6 +67,19 @@ async def fetch(url, params):
             raise HTTPException(status_code=404, detail=data.get("message", "City not found"))
         return data
 
+def _raise_if_openweather_error(data: dict):
+    """
+    OpenWeather's sub-APIs (uvi, air_pollution, onecall) return an
+    error payload with a "cod" field on failure (bad key, rate limit,
+    endpoint not authorized on the current plan), same shape fetch()
+    already checks for the main /weather endpoint. Callers that made a
+    second raw API call (bypassing fetch()) previously used the
+    response unvalidated, so an error silently looked like valid-but-
+    empty data instead of raising.
+    """
+    if isinstance(data, dict) and "cod" in data and str(data["cod"]) not in ("200",):
+        raise HTTPException(status_code=502, detail=data.get("message", "Upstream weather provider error"))
+
 def cache_get(key):
     val = r.get(key)
     return json.loads(val) if val else None
@@ -171,6 +184,14 @@ async def get_alerts(city: str, request: Request, key_info=Depends(api_key_gate)
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{BASE_URL}/onecall", params={"lat": lat, "lon": lon, "appid": API_KEY, "exclude": "current,minutely,hourly,daily"})
         data = res.json()
+    # Unlike the first call above (which goes through fetch() and
+    # validates "cod"), this second call previously used the raw
+    # response with no validation at all. An API error here (bad key,
+    # rate limit, endpoint not authorized on this OpenWeather plan)
+    # silently looked identical to "no alerts" - the client had no way
+    # to tell a real error apart from a genuinely quiet weather day.
+    _raise_if_openweather_error(data)
+    log_query(city, "/alerts")
     return {"city": city, "alerts": data.get("alerts", "No active alerts")}
 
 @app.get("/weather/{city}/uv", summary="UV index")
@@ -181,6 +202,7 @@ async def get_uv(city: str, request: Request, key_info=Depends(api_key_gate)):
     async with httpx.AsyncClient() as client:
         res = await client.get("https://api.openweathermap.org/data/2.5/uvi", params={"lat": lat, "lon": lon, "appid": API_KEY})
         data = res.json()
+    _raise_if_openweather_error(data)
     log_query(city, "/uv")
     return {"city": city, "uv_index": data.get("value"), "lat": lat, "lon": lon}
 
@@ -196,6 +218,12 @@ async def get_aqi(city: str, request: Request, key_info=Depends(api_key_gate)):
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{BASE_URL}/air_pollution", params={"lat": lat, "lon": lon, "appid": API_KEY})
         data = res.json()
+    # Must validate BEFORE building/caching result - an unvalidated API
+    # error here previously got silently cached as a fake-successful
+    # null AQI reading for 30 minutes (cache_set below), poisoning the
+    # cache and hiding the real error from every request in that
+    # window, even after the underlying issue was fixed.
+    _raise_if_openweather_error(data)
     aqi = data.get("list", [{}])[0].get("main", {}).get("aqi")
     components = data.get("list", [{}])[0].get("components", {})
     result = {"city": city, "aqi": aqi, "components": components, "lat": lat, "lon": lon}
