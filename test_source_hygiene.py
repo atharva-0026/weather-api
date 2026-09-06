@@ -72,6 +72,34 @@ def test_daily_log_uses_correct_weather_url_shape():
     assert "/weather/Pune" in content or "/weather/{" in content
 
 
+def test_daily_log_points_at_current_render_deployment_not_dead_railway_url():
+    """Regression test: after migrating from Railway to Render
+    (KNOWN_ISSUES.md), daily_log.py was left pointing at the dead
+    Railway URL. Every daily run failed silently in the Actions history
+    from the migration date onward, with no visible connection to the
+    migration itself. Must point at the current live deployment."""
+    content = _read("daily_log.py")
+    assert "railway.app" not in content, (
+        "daily_log.py must not reference the old, now-dead Railway URL"
+    )
+    assert "onrender.com" in content, (
+        "daily_log.py must point at the current Render deployment"
+    )
+
+
+def test_daily_log_uses_failover_endpoint_not_key_dependent_endpoint():
+    """Regression test: /weather/{city} requires OPENWEATHER_API_KEY to
+    be configured correctly on the deployment. /failover works with
+    zero keys configured (falls back through WeatherAPI, then
+    Open-Meteo), so this unattended daily job shouldn't depend on that
+    key being set correctly to succeed."""
+    content = _read("daily_log.py")
+    assert "/failover" in content, (
+        "daily_log.py should use the /failover endpoint so it doesn't "
+        "depend on OPENWEATHER_API_KEY being configured"
+    )
+
+
 def test_docker_compose_env_file_is_optional():
     """Regression test: docker-compose.yml's `env_file: .env` previously
     hard-failed `docker compose up --build` on a fresh clone (no .env
