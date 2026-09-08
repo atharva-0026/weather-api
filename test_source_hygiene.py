@@ -135,3 +135,26 @@ def test_main_does_not_crash_with_empty_redis_url_env_var():
     assert result.returncode == 0, (
         f"main.py crashed on import with REDIS_URL='': {result.stderr[-500:]}"
     )
+
+
+def test_frontend_uv_rendering_guards_against_null_and_is_isolated():
+    """Regression test: static/index.html's search() function previously
+    rendered UV/AQI in the SAME outer try/catch as the main weather
+    display, unlike the ml-forecast section which already had its own
+    isolated try/catch. uvVal.toFixed(1) with a null uv_index (a
+    legitimate response when OpenWeather has no UV data for a location)
+    crashed, and that crash overwrote the already-successfully-rendered
+    #current-result weather display via the outer catch block."""
+    content = _read("static/index.html")
+    uv_idx = content.find("const uv=await apiFetch")
+    assert uv_idx != -1, "expected the UV fetch call in static/index.html"
+
+    # UV rendering must be inside its own try block, not the outer one
+    # shared with the main weather display.
+    preceding = content[max(0, uv_idx - 20):uv_idx]
+    assert "try{" in preceding, "UV rendering must be wrapped in its own try/catch"
+
+    snippet = content[uv_idx: uv_idx + 600]
+    assert "uvVal==null" in snippet or "uvVal == null" in snippet, (
+        "must guard against a null uv_index before calling .toFixed() on it"
+    )
