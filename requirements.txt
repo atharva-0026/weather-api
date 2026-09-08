@@ -16,6 +16,6 @@ python-dotenv==1.2.2
 redis==8.0.1
 scikit-learn>=1.4
 pytest-cov
-slowapi>=0.1.9
+slowapi>=0.1.10
 sortedcontainers==2.4.0
 uvicorn>=0.27
