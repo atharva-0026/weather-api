@@ -100,6 +100,25 @@ def test_daily_log_uses_failover_endpoint_not_key_dependent_endpoint():
     )
 
 
+def test_daily_log_timeout_accounts_for_render_cold_start():
+    """Regression test: every daily-log Actions run failed even after
+    the Railway->Render URL fix landed. Render's free tier spins down
+    the app after inactivity and can take 50+ seconds to cold-start
+    (confirmed via Render's own dashboard warning) - this cron runs
+    once a day, so the app has almost certainly gone to sleep every
+    time. The old timeout=10 was very likely failing on cold-start
+    delay alone, not a real connectivity problem. Must allow enough
+    time for a cold start."""
+    content = _read("daily_log.py")
+    match = re.search(r"requests\.get\([^)]*timeout=(\d+)", content)
+    assert match, "expected a timeout= argument on the requests.get call in daily_log.py"
+    timeout_value = int(match.group(1))
+    assert timeout_value >= 30, (
+        f"daily_log.py's request timeout is {timeout_value}s, too short for "
+        "a Render free-tier cold start (50+ seconds observed)"
+    )
+
+
 def test_docker_compose_env_file_is_optional():
     """Regression test: docker-compose.yml's `env_file: .env` previously
     hard-failed `docker compose up --build` on a fresh clone (no .env

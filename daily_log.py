@@ -22,7 +22,16 @@ def fetch_stats():
         # (falls back through WeatherAPI, then Open-Meteo), so this
         # daily job doesn't depend on that key being set correctly to
         # succeed. See KNOWN_ISSUES.md for the history of failures here.
-        r = requests.get(f"{API_BASE}/weather/Pune/failover", timeout=10)
+        #
+        # timeout=60, not 10: Render's free tier spins down the app
+        # after inactivity and can take 50+ seconds to cold-start on
+        # the next request (confirmed via Render's own dashboard
+        # warning). This cron runs once a day, so the app has almost
+        # certainly gone to sleep every single time - a 10s timeout
+        # was very likely failing on cold-start delay alone, not a
+        # real connectivity problem. Every daily run has failed since
+        # the Railway->Render migration despite the URL being correct.
+        r = requests.get(f"{API_BASE}/weather/Pune/failover", timeout=60)
         weather = r.json() if r.status_code == 200 else {"error": r.status_code}
     except Exception as e:
         weather = {"error": str(e)}
