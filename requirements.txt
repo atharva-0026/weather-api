@@ -1,4 +1,4 @@
-anyio==4.14.2
+anyio==4.15.1
 certifi==2026.7.22
 fakeredis==2.36.2
 fastapi>=0.110
