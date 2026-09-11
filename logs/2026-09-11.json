@@ -1,0 +1,12 @@
+{
+  "date": "2026-09-11",
+  "pune_weather": {
+    "city": "Pune",
+    "temp": 30.0,
+    "humidity": 55,
+    "description": "\u2014",
+    "lat": 18.51957,
+    "lon": 73.85535,
+    "provider": "open-meteo"
+  }
+}
