@@ -227,6 +227,50 @@ def test_circuit_breaker_opens_after_threshold():
     r.delete(f"provider_breaker:{test_provider}")
 
 
+def test_circuit_breaker_cooldown_starts_when_it_actually_opens_not_at_first_failure():
+    """Regression test: opened_at was previously set on the FIRST
+    failure (fails == 1), not when the breaker actually transitions to
+    OPEN (fails == FAILURE_THRESHOLD). For failures spread out over
+    time rather than all at once, this started the cooldown clock too
+    early, silently shortening the enforced OPEN window. Simulates
+    failures 2 minutes apart and confirms the breaker stays OPEN for
+    the full cooldown measured from when it actually opened, not from
+    the first failure."""
+    import providers
+    from datetime import datetime, timezone, timedelta
+    from unittest.mock import patch
+
+    test_provider = "pytest-cooldown-timing-check"
+    r.delete(f"provider_breaker:{test_provider}")
+
+    t0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(minutes=2)
+    t2 = t0 + timedelta(minutes=4)  # this failure actually opens the breaker
+
+    with patch("providers.datetime") as mock_dt:
+        mock_dt.fromisoformat = datetime.fromisoformat
+
+        mock_dt.now.return_value = t0
+        providers.record_failure(r, test_provider)
+        mock_dt.now.return_value = t1
+        providers.record_failure(r, test_provider)
+        mock_dt.now.return_value = t2
+        providers.record_failure(r, test_provider)
+        assert providers.get_state(r, test_provider) == providers.OPEN
+
+        # 3 minutes after the REAL open time (t2) - must still be OPEN,
+        # since COOLDOWN_SECONDS is 300s (5 min). The bug made this
+        # already HALF_OPEN because the clock incorrectly started at t0.
+        mock_dt.now.return_value = t2 + timedelta(minutes=3)
+        assert providers.get_state(r, test_provider) == providers.OPEN
+
+        # Just past the real 5-minute cooldown from t2 - now HALF_OPEN.
+        mock_dt.now.return_value = t2 + timedelta(minutes=5, seconds=1)
+        assert providers.get_state(r, test_provider) == providers.HALF_OPEN
+
+    r.delete(f"provider_breaker:{test_provider}")
+
+
 class _FakeUpstreamResponse:
     """Minimal stand-in for httpx.Response — just needs .json()."""
     def __init__(self, data):
