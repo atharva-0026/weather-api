@@ -87,7 +87,15 @@ def record_failure(r, name: str):
     key = _breaker_key(name)
     state_before = get_state(r, name)
     fails = r.hincrby(key, "fails", 1)
-    if fails == 1:
+    if fails == FAILURE_THRESHOLD:
+        # This is the failure that actually transitions the breaker to
+        # OPEN (see get_state: fails < FAILURE_THRESHOLD is still CLOSED).
+        # opened_at previously got set on fails == 1 - the FIRST failure,
+        # not the one that actually opens the breaker. For failures that
+        # accumulate gradually rather than all at once, that started the
+        # cooldown clock too early, silently shortening the enforced OPEN
+        # window (confirmed: failures 2 min apart cut a 5-minute cooldown
+        # down to under 3 minutes of actual OPEN-state enforcement).
         r.hset(key, "opened_at", datetime.now(timezone.utc).isoformat())
     if state_before == HALF_OPEN:
         # trial failed - reopen the breaker with a fresh cooldown window
