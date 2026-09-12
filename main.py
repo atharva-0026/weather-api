@@ -3,6 +3,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import httpx, redis, json, os, asyncio, logging
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from typing import Optional
@@ -23,7 +24,19 @@ logging.basicConfig(filename="requests.log", level=logging.INFO, format="%(ascti
 API_VERSION = "3.1.0"
 
 start_time = datetime.now(timezone.utc)
-app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version=API_VERSION)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Replaces the deprecated @app.on_event("startup") - refresh_cache
+    # is defined further down in this module, which is fine since this
+    # function only runs when the app actually starts (well after the
+    # whole module has finished loading), not at function-definition time.
+    asyncio.create_task(refresh_cache())
+    yield
+
+
+app = FastAPI(title="Weather API", description="Production-grade weather API with Redis caching, rate limiting, query history, and leaderboard.", version=API_VERSION, lifespan=lifespan)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -103,10 +116,6 @@ async def refresh_cache():
                 cache_set(f"weather:{city}:metric", data)
             except Exception:
                 logging.warning(f"refresh_cache failed for city={city}", exc_info=True)
-
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(refresh_cache())
 
 @app.get("/health", summary="Health check")
 async def health():
