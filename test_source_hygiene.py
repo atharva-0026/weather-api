@@ -177,3 +177,35 @@ def test_frontend_uv_rendering_guards_against_null_and_is_isolated():
     assert "uvVal==null" in snippet or "uvVal == null" in snippet, (
         "must guard against a null uv_index before calling .toFixed() on it"
     )
+
+
+def test_frontend_url_encodes_city_names():
+    """Regression test: city comes from a free-text input with no
+    restriction on characters, but the URLs built from it previously
+    embedded it raw. '#' is the worst case - it's the URL fragment
+    separator, so a stray '#' in a city name silently truncated both
+    the request path and the ?units= query string, since everything
+    after '#' is a browser-only marker never sent to the server at
+    all. Real city names with legitimate special characters (São
+    Paulo, México City, Zürich) also previously produced malformed
+    URLs with raw non-ASCII bytes embedded directly."""
+    content = _read("static/index.html")
+
+    search_idx = content.find("async function search()")
+    assert search_idx != -1
+    compare_idx = content.find("async function compareWeather()")
+    assert compare_idx != -1
+
+    search_body = content[search_idx:compare_idx]
+    assert "encodeURIComponent(city)" in search_body, (
+        "search() must URL-encode city before building any fetch() URL from it"
+    )
+    # Every /weather/... URL built inside search() must use the encoded
+    # variable, not the raw city string directly.
+    assert "`/weather/${city}" not in search_body, (
+        "found an unencoded city interpolated directly into a URL in search()"
+    )
+
+    compare_body = content[compare_idx: compare_idx + 800]
+    assert "encodeURIComponent(city1)" in compare_body
+    assert "encodeURIComponent(city2)" in compare_body
