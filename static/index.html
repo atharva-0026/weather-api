@@ -154,17 +154,26 @@ async function search(){
   const city=document.getElementById('city-input').value.trim();
   const units=document.getElementById('units-select').value;
   if(!city)return;
+  // Encode once, reuse everywhere below - city comes straight from a
+  // free-text input with no restriction on characters. Without this,
+  // a city name containing '&', '#', '/', or non-ASCII characters
+  // (São Paulo, México, Zürich - all real city names) previously
+  // produced a malformed URL. '#' is the worst case: everything after
+  // it is a browser-only fragment that's never even sent to the
+  // server, silently truncating both the request path and the
+  // units query param.
+  const encodedCity=encodeURIComponent(city);
   const btn=document.getElementById('search-btn');
   btn.disabled=true;btn.textContent='...';
   try{
-    const d=await apiFetch(`/weather/${city}?units=${units}`);
+    const d=await apiFetch(`/weather/${encodedCity}?units=${units}`);
     const unit=units==='metric'?'°C':'°F';
     document.getElementById('current-result').innerHTML=`<div class="card"><div class="weather-main"><div><div class="city-name">${d.name}, ${d.sys.country}</div><div class="condition">${d.weather[0].description}</div><div class="big-temp">${Math.round(d.main.temp)}${unit}</div></div><div class="stats-grid" style="align-content:start"><div class="stat"><div class="stat-label">Feels Like</div><div class="stat-value">${Math.round(d.main.feels_like)}${unit}</div></div><div class="stat"><div class="stat-label">Humidity</div><div class="stat-value">${d.main.humidity}%</div></div><div class="stat"><div class="stat-label">Wind</div><div class="stat-value">${d.wind.speed} m/s</div></div><div class="stat"><div class="stat-label">Pressure</div><div class="stat-value">${d.main.pressure} hPa</div></div><div class="stat"><div class="stat-label">Visibility</div><div class="stat-value">${(d.visibility/1000).toFixed(1)} km</div></div><div class="stat"><div class="stat-label">Source</div><div class="stat-value" style="font-size:0.75rem;color:var(--accent);font-family:monospace">${d.source}</div></div></div></div></div>`;
-    const forecast=await apiFetch(`/weather/${city}/forecast?units=${units}`);
+    const forecast=await apiFetch(`/weather/${encodedCity}/forecast?units=${units}`);
     const items=forecast.list.slice(0,10).map(item=>{const t=new Date(item.dt*1000);const time=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return`<div class="forecast-item"><div class="forecast-time">${time}</div><div class="forecast-temp">${Math.round(item.main.temp)}${unit}</div><div class="forecast-desc">${item.weather[0].description}</div></div>`}).join('');
     document.getElementById('forecast-result').innerHTML=`<div class="card"><div class="section-title">Next 30 Hours</div><div class="forecast-scroll">${items}</div></div>`;
     try{
-      const uv=await apiFetch(`/weather/${city}/uv`);
+      const uv=await apiFetch(`/weather/${encodedCity}/uv`);
       const uvVal=uv.uv_index;
       if(uvVal==null){
         document.getElementById('uv-result').innerHTML=`<div class="error">UV data unavailable for this location.</div>`;
@@ -175,13 +184,13 @@ async function search(){
       }
     }catch(e){document.getElementById('uv-result').innerHTML=`<div class="error">${e.message}</div>`}
     try{
-      const aqi=await apiFetch(`/weather/${city}/aqi`);
+      const aqi=await apiFetch(`/weather/${encodedCity}/aqi`);
       const aqiLabels={1:'Good',2:'Fair',3:'Moderate',4:'Poor',5:'Very Poor'};
       const c=aqi.components||{};
       document.getElementById('aqi-result').innerHTML=`<div class="card"><div class="section-title">Air Quality — ${d.name}</div><div class="aqi-badge aqi-${aqi.aqi}">${aqi.aqi}</div><div style="color:var(--muted);margin-bottom:1rem">${aqiLabels[aqi.aqi]||'Unknown'}</div><div class="stats-grid"><div class="stat"><div class="stat-label">PM2.5</div><div class="stat-value">${c.pm2_5?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">PM10</div><div class="stat-value">${c.pm10?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">O3</div><div class="stat-value">${c.o3?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">NO2</div><div class="stat-value">${c.no2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">SO2</div><div class="stat-value">${c.so2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">CO</div><div class="stat-value">${c.co?.toFixed(1)??'—'}</div></div></div></div>`;
     }catch(e){document.getElementById('aqi-result').innerHTML=`<div class="error">${e.message}</div>`}
     try{
-      const ml=await apiFetch(`/weather/${city}/ml-forecast?days=7`);
+      const ml=await apiFetch(`/weather/${encodedCity}/ml-forecast?days=7`);
       const preds=ml.predictions;
       const temps=preds.map(p=>p.predicted_temp_max);
       const min=Math.min(...temps),max=Math.max(...temps);
@@ -207,7 +216,7 @@ async function compareWeather(){
   const city2=document.getElementById('city2-input').value.trim();
   const units=document.getElementById('units-select').value;
   if(!city1||!city2)return;
-  try{const d=await apiFetch(`/compare?city1=${city1}&city2=${city2}&units=${units}`);const cities=Object.keys(d);document.getElementById('compare-result').innerHTML=`<div class="compare-grid">${cities.map(c=>`<div class="compare-city"><div class="city-name" style="font-size:1.1rem;margin-bottom:0.5rem">${c}</div><div class="big-temp" style="font-size:2.5rem">${d[c].temp}</div><div class="condition">${d[c].weather}</div><div style="margin-top:0.75rem;font-size:0.85rem;color:var(--muted)">Humidity: ${d[c].humidity}%</div></div>`).join('')}</div>`}catch(e){document.getElementById('compare-result').innerHTML=`<div class="error">${e.message}</div>`}
+  try{const d=await apiFetch(`/compare?city1=${encodeURIComponent(city1)}&city2=${encodeURIComponent(city2)}&units=${units}`);const cities=Object.keys(d);document.getElementById('compare-result').innerHTML=`<div class="compare-grid">${cities.map(c=>`<div class="compare-city"><div class="city-name" style="font-size:1.1rem;margin-bottom:0.5rem">${c}</div><div class="big-temp" style="font-size:2.5rem">${d[c].temp}</div><div class="condition">${d[c].weather}</div><div style="margin-top:0.75rem;font-size:0.85rem;color:var(--muted)">Humidity: ${d[c].humidity}%</div></div>`).join('')}</div>`}catch(e){document.getElementById('compare-result').innerHTML=`<div class="error">${e.message}</div>`}
 }
 async function loadTop(){
   try{const d=await apiFetch('/top');const max=d.leaderboard[0]?.searches||1;document.getElementById('top-result').innerHTML=d.leaderboard.length===0?'<span class="loading">No data yet.</span>':d.leaderboard.map((item,i)=>`<div class="leaderboard-row"><div class="rank rank-${i+1}">${String(i+1).padStart(2,'0')}</div><div style="flex:0 0 120px;font-weight:500">${item.city}</div><div class="bar-bg"><div class="bar-fill" style="width:${(item.searches/max)*100}%"></div></div><div class="searches">${item.searches} req</div></div>`).join('')}catch(e){document.getElementById('top-result').innerHTML=`<div class="error">${e.message}</div>`}
