@@ -246,10 +246,10 @@ async def ml_forecast(city: str, request: Request, days: int = Query(5, ge=1, le
     weather = await fetch(f"{BASE_URL}/weather", {"q": city, "units": "metric"})
     lat, lon = weather["coord"]["lat"], weather["coord"]["lon"]
     try:
-        model, last_date = await get_or_train_model(city, lat, lon)
+        model, last_date, train_length = await get_or_train_model(city, lat, lon)
     except Exception as e:
         raise HTTPException(status_code=502, detail="Could not train forecast model, try again later") from e
-    predictions = predict_next_days(model, last_date, days)
+    predictions = predict_next_days(model, last_date, train_length, days)
     log_query(city, "/ml-forecast")
     return {"city": city, "model": "RandomForestRegressor", "trained_through": last_date.isoformat(), "predictions": predictions}
 

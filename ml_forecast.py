@@ -49,11 +49,14 @@ async def fetch_historical(lat: float, lon: float, days: int = 365) -> dict:
         return res.json()
 
 
-def _build_features(dates: list) -> np.ndarray:
+def _build_features(dates: list, trend_offset: int = 0) -> np.ndarray:
     doy = np.array([d.timetuple().tm_yday for d in dates])
     sin = np.sin(2 * np.pi * doy / 365.25)
     cos = np.cos(2 * np.pi * doy / 365.25)
-    trend = np.arange(len(dates))
+    # trend_offset lets prediction-time calls continue the trend index
+    # from where training left off, instead of resetting to 0 - see
+    # train_model()/predict_next_days() for why this matters.
+    trend = np.arange(len(dates)) + trend_offset
     return np.column_stack([sin, cos, trend])
 
 
@@ -68,23 +71,36 @@ def train_model(daily: dict):
         raise ValueError("Not enough historical data to train a model")
     model = RandomForestRegressor(n_estimators=200, max_depth=6, random_state=42)
     model.fit(X, y)
-    return model, dates_clean[-1]
+    return model, dates_clean[-1], len(dates_clean)
 
 
 async def get_or_train_model(city: str, lat: float, lon: float):
     key = _cache_key(city, lat, lon)
     cached = _model_cache.get(key)
     if cached and cached["trained_on"] == date.today():
-        return cached["model"], cached["last_date"]
+        return cached["model"], cached["last_date"], cached["train_length"]
     data = await fetch_historical(lat, lon)
-    model, last_date = train_model(data["daily"])
-    _model_cache[key] = {"model": model, "trained_on": date.today(), "last_date": last_date}
-    return model, last_date
+    model, last_date, train_length = train_model(data["daily"])
+    _model_cache[key] = {
+        "model": model, "trained_on": date.today(),
+        "last_date": last_date, "train_length": train_length,
+    }
+    return model, last_date, train_length
 
 
-def predict_next_days(model, last_date: date, n: int = 5) -> list:
+def predict_next_days(model, last_date: date, train_length: int, n: int = 5) -> list:
+    # trend feature: _build_features() computes trend as a purely
+    # positional index (np.arange(len(dates))) within whatever date
+    # list it's given. Trained on train_length days (trend 0 to
+    # train_length-1), the first future prediction day is actually day
+    # train_length in that same continuing sequence - not day 0 again.
+    # Without trend_offset=train_length here, every prediction request
+    # fed the model an out-of-distribution trend value (0, 1, 2, ...)
+    # that overlapped with the START of the training window instead of
+    # continuing from the END of it, for a feature specifically meant
+    # to capture long-term drift across the training period.
     future_dates = [last_date + timedelta(days=i + 1) for i in range(n)]
-    X = _build_features(future_dates)
+    X = _build_features(future_dates, trend_offset=train_length)
     preds = model.predict(X)
     return [
         {"date": d.isoformat(), "predicted_temp_max": round(float(p), 1)}
