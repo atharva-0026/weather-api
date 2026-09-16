@@ -116,7 +116,7 @@ def test_top_leaderboard_shape():
 def test_ml_forecast(mock_predict, mock_train, mock_log, mock_fetch):
     from datetime import date
     mock_fetch.return_value = {"coord": {"lat": 19.07, "lon": 72.87}}
-    mock_train.return_value = ("fake_model", date(2026, 7, 12))
+    mock_train.return_value = ("fake_model", date(2026, 7, 12), 365)
     mock_predict.return_value = [
         {"date": "2026-07-13", "predicted_temp_max": 31.2},
         {"date": "2026-07-14", "predicted_temp_max": 30.8},

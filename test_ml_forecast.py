@@ -33,6 +33,42 @@ def test_build_features_shape():
     assert features.shape == (3, 3)  # sin, cos, trend columns
 
 
+def test_build_features_trend_defaults_to_starting_at_zero():
+    from datetime import date
+    dates = [date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)]
+    features = ml_forecast._build_features(dates)
+    assert list(features[:, 2]) == [0.0, 1.0, 2.0]
+
+
+def test_build_features_trend_offset_continues_the_sequence():
+    """Regression test: predict_next_days() previously called
+    _build_features(future_dates) with no offset, so the trend feature
+    reset to 0 for the first future prediction day instead of
+    continuing from where training left off (e.g. 365 after a full
+    year of training data) - an out-of-distribution value for a
+    feature meant to capture drift across the training period."""
+    from datetime import date
+    dates = [date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)]
+    features = ml_forecast._build_features(dates, trend_offset=365)
+    assert list(features[:, 2]) == [365.0, 366.0, 367.0]
+
+
+def test_predict_next_days_continues_trend_from_training_length():
+    from datetime import date
+    from unittest.mock import MagicMock
+
+    fake_model = MagicMock()
+    fake_model.predict.return_value = [20.0, 21.0]
+
+    predict_next_days = ml_forecast.predict_next_days
+    predict_next_days(fake_model, date(2026, 1, 31), train_length=31, n=2)
+
+    # Whatever feature matrix was actually passed to model.predict()
+    # must have trend values continuing from 31, not resetting to 0.
+    called_features = fake_model.predict.call_args[0][0]
+    assert list(called_features[:, 2]) == [31.0, 32.0]
+
+
 def test_train_model_raises_on_insufficient_data():
     daily = {
         "time": ["2026-01-01", "2026-01-02"],
@@ -53,6 +89,7 @@ def test_train_model_filters_nan_values():
     temps[5] = float("nan")  # one bad reading should be filtered, not crash
     daily = {"time": dates, "temperature_2m_max": temps}
 
-    model, last_date = ml_forecast.train_model(daily)
+    model, last_date, train_length = ml_forecast.train_model(daily)
     assert model is not None
     assert last_date.isoformat() == "2026-01-31"
+    assert train_length == 30  # 31 days minus the 1 filtered NaN
