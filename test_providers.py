@@ -40,6 +40,21 @@ def test_fetch_openmeteo_returns_real_data_on_success():
     assert result["temp"] == 23.2
     assert result["humidity"] == 85
     assert result["provider"] == "open-meteo"
+    assert result["description"] == "—"
+
+
+def test_fetch_openmeteo_maps_weather_code_to_description():
+    geo_response = _mock_response({"results": [{"latitude": 18.52, "longitude": 73.86, "name": "Pune"}]})
+    forecast_response = _mock_response({
+        "current": {"temperature_2m": 23.2, "relative_humidity_2m": 85, "weather_code": 63}
+    })
+
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
+        mock_get.side_effect = [geo_response, forecast_response]
+        result = asyncio.run(fetch_openmeteo("Pune", "metric"))
+
+    assert result["description"] == "moderate rain"
+    assert "weather_code" in mock_get.call_args_list[1].kwargs["params"]["current"]
 
 
 def test_fetch_openmeteo_raises_instead_of_returning_nulls():
