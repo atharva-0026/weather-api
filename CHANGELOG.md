@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Open-Meteo fallback now returns a real weather description (WMO `weather_code` mapping) instead of "—"
 - Added /weather/{city}/summary: plain-English one-line weather summary
 - Documented API endpoints
 - Added /weather/{city}/ml-forecast: RandomForestRegressor trained on 1yr Open-Meteo historical data per city, cyclical day-of-year + trend features, retrains daily
