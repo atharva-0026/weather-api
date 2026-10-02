@@ -15,7 +15,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: pip install requests
+        run: pip install httpx
 
       - name: Run backfill
         run: python backfill_logs.py

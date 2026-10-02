@@ -17,7 +17,7 @@ import json
 import os
 import sys
 
-import requests
+import httpx
 
 LOG_DIR = "logs"
 BACKFILL_START = "2026-07-18"
@@ -28,7 +28,7 @@ ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 
 def geocode(city: str) -> tuple:
-    res = requests.get(GEOCODE_URL, params={"name": city, "count": 1}, timeout=30)
+    res = httpx.get(GEOCODE_URL, params={"name": city, "count": 1}, timeout=30)
     res.raise_for_status()
     results = res.json().get("results")
     if not results:
@@ -59,7 +59,7 @@ def fetch_historical_stats(lat: float, lon: float, date: str) -> dict:
     """Mean temperature/humidity for `date`, averaged from Open-Meteo's
     hourly archive (the archive API doesn't offer a daily humidity
     aggregate, so this averages the hourly series itself)."""
-    res = requests.get(ARCHIVE_URL, params={
+    res = httpx.get(ARCHIVE_URL, params={
         "latitude": lat, "longitude": lon,
         "start_date": date, "end_date": date,
         "hourly": "temperature_2m,relative_humidity_2m",

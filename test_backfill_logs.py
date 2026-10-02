@@ -56,7 +56,7 @@ def test_fetch_historical_stats_averages_hourly_series():
             "relative_humidity_2m": [50, 60, 70],
         }
     })
-    with patch.object(backfill_logs.requests, "get", return_value=response):
+    with patch.object(backfill_logs.httpx, "get", return_value=response):
         stats = backfill_logs.fetch_historical_stats(18.52, 73.86, "2026-07-18")
 
     assert stats == {"temp": 22.0, "humidity": 60.0}
@@ -69,7 +69,7 @@ def test_fetch_historical_stats_skips_null_readings_in_average():
             "relative_humidity_2m": [50, None, 70],
         }
     })
-    with patch.object(backfill_logs.requests, "get", return_value=response):
+    with patch.object(backfill_logs.httpx, "get", return_value=response):
         stats = backfill_logs.fetch_historical_stats(18.52, 73.86, "2026-07-18")
 
     assert stats == {"temp": 22.0, "humidity": 60.0}
@@ -77,7 +77,7 @@ def test_fetch_historical_stats_skips_null_readings_in_average():
 
 def test_fetch_historical_stats_raises_when_no_data_returned():
     response = _mock_response({"hourly": {"temperature_2m": [], "relative_humidity_2m": []}})
-    with patch.object(backfill_logs.requests, "get", return_value=response):
+    with patch.object(backfill_logs.httpx, "get", return_value=response):
         with pytest.raises(RuntimeError, match="no historical data"):
             backfill_logs.fetch_historical_stats(18.52, 73.86, "2026-07-18")
 
@@ -96,7 +96,7 @@ def test_main_rewrites_only_broken_entries_and_leaves_others_untouched(tmp_path)
         }
     })
 
-    with patch.object(backfill_logs.requests, "get", side_effect=[geocode_response, archive_response]):
+    with patch.object(backfill_logs.httpx, "get", side_effect=[geocode_response, archive_response]):
         backfill_logs.main()
 
     backfilled = json.loads((tmp_path / "2026-07-18.json").read_text())
@@ -118,7 +118,7 @@ def test_main_exits_nonzero_when_any_date_fails(tmp_path):
     )
     failing_archive_response = _mock_response({"hourly": {"temperature_2m": [], "relative_humidity_2m": []}})
 
-    with patch.object(backfill_logs.requests, "get", side_effect=[geocode_response, failing_archive_response]):
+    with patch.object(backfill_logs.httpx, "get", side_effect=[geocode_response, failing_archive_response]):
         with pytest.raises(SystemExit) as exc_info:
             backfill_logs.main()
 
@@ -131,7 +131,7 @@ def test_main_exits_nonzero_when_any_date_fails(tmp_path):
 def test_main_is_noop_when_nothing_broken(tmp_path):
     _write_log(tmp_path, "2026-07-20", {"city": "Pune", "temp": 25})
 
-    with patch.object(backfill_logs.requests, "get") as mock_get:
+    with patch.object(backfill_logs.httpx, "get") as mock_get:
         backfill_logs.main()
 
     mock_get.assert_not_called()
