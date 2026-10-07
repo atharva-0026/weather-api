@@ -61,3 +61,43 @@ def get_usage(r, api_key: str) -> dict:
     limit = TIERS.get(tier, TIERS["free"])
     count = int(r.get(_usage_key(api_key)) or 0)
     return {"tier": tier, "used": count, "limit": limit, "remaining": max(0, limit - count)}
+
+
+MAX_FAVORITES = 25
+
+
+def _require_valid_key(r, api_key: str) -> None:
+    if not r.hgetall(f"apikey:{api_key}"):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def _favorites_key(api_key: str) -> str:
+    return f"favorites:{api_key}"
+
+
+def get_favorites(r, api_key: str) -> dict:
+    _require_valid_key(r, api_key)
+    # Stored as a hash of {lowercased city: original casing} so
+    # "Mumbai" and "mumbai" count as the same favorite (same reasoning
+    # as /compare's case-insensitive duplicate check) while still
+    # displaying whatever casing was actually added.
+    return {"favorites": sorted(r.hgetall(_favorites_key(api_key)).values())}
+
+
+def add_favorite(r, api_key: str, city: str) -> dict:
+    _require_valid_key(r, api_key)
+    city = city.strip()
+    if not city:
+        raise HTTPException(status_code=400, detail="city must not be empty")
+    key = _favorites_key(api_key)
+    field = city.lower()
+    if r.hlen(key) >= MAX_FAVORITES and not r.hexists(key, field):
+        raise HTTPException(status_code=400, detail=f"Maximum of {MAX_FAVORITES} favorites reached")
+    r.hset(key, field, city)
+    return get_favorites(r, api_key)
+
+
+def remove_favorite(r, api_key: str, city: str) -> dict:
+    _require_valid_key(r, api_key)
+    r.hdel(_favorites_key(api_key), city.strip().lower())
+    return get_favorites(r, api_key)

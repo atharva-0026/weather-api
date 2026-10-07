@@ -72,7 +72,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
 <body>
 <header>
   <h1>⛅ Weather API</h1>
-  <span>v3.0.0</span>
+  <span id="version-badge">v…</span>
   <span id="health-badge" style="margin-left:auto"></span>
 </header>
 <div class="search-row">
@@ -94,7 +94,9 @@ button:disabled{opacity:0.4;cursor:not-allowed}
   <button class="tab" onclick="showTab('uv',event)">UV Index</button>
   <button class="tab" onclick="showTab('aqi',event)">Air Quality</button>
   <button class="tab" onclick="showTab('ml',event)">ML Forecast</button>
+  <button class="tab" onclick="showTab('alerts',event)">Alerts</button>
   <button class="tab" onclick="showTab('compare',event)">Compare</button>
+  <button class="tab" onclick="showTab('favorites',event)">Favorites</button>
   <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
   <button class="tab" onclick="showTab('apikey',event)">API Key</button>
 </div>
@@ -106,6 +108,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
 <div id="tab-uv" class="hidden"><div id="uv-result"></div></div>
 <div id="tab-aqi" class="hidden"><div id="aqi-result"></div></div>
 <div id="tab-ml" class="hidden"><div id="ml-result"></div></div>
+<div id="tab-alerts" class="hidden"><div id="alerts-result"></div></div>
 <div id="tab-compare" class="hidden">
   <div class="card">
     <div class="section-title">Compare Two Cities</div>
@@ -115,6 +118,18 @@ button:disabled{opacity:0.4;cursor:not-allowed}
       <button onclick="compareWeather()">Compare</button>
     </div>
     <div id="compare-result"></div>
+  </div>
+</div>
+<div id="tab-favorites" class="hidden">
+  <div class="card">
+    <div class="section-title">Favorite Cities</div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Favorites are tied to your API key, not your browser — generate one in the API Key tab if you don't have one yet.</div>
+    <div class="search-row" style="max-width:100%">
+      <input id="favorites-key-input" type="text" placeholder="Your API key..."/>
+      <input id="favorite-city-input" type="text" placeholder="City to add..."/>
+      <button onclick="addFavorite()">Add</button>
+    </div>
+    <div id="favorites-result"></div>
   </div>
 </div>
 <div id="tab-top" class="hidden">
@@ -149,7 +164,7 @@ button:disabled{opacity:0.4;cursor:not-allowed}
 <script>
 const BASE='';
 async function apiFetch(path){const res=await fetch(BASE+path);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');return data}
-function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop();if(name==='apikey')loadProviderStatus()}
+function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop();if(name==='apikey')loadProviderStatus();if(name==='favorites')loadFavorites()}
 async function search(){
   const city=document.getElementById('city-input').value.trim();
   const units=document.getElementById('units-select').value;
@@ -208,6 +223,17 @@ async function search(){
       }).join('');
       document.getElementById('ml-result').innerHTML=`<div class="card"><div class="section-title">7-Day ML Forecast — ${d.name}</div><div style="font-size:0.75rem;color:var(--muted);margin-bottom:1rem">Model: ${ml.model} · trained through ${ml.trained_through}</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg></div>`;
     }catch(e){document.getElementById('ml-result').innerHTML=`<div class="error">${e.message}</div>`}
+    try{
+      const alertsRes=await apiFetch(`/weather/${encodedCity}/alerts`);
+      const al=alertsRes.alerts;
+      const list=Array.isArray(al)?al:[];
+      if(list.length===0){
+        document.getElementById('alerts-result').innerHTML=`<div class="card"><div class="section-title">Alerts — ${d.name}</div><div style="color:var(--success)">✓ No active severe weather alerts</div></div>`;
+      }else{
+        const rows=list.map(a=>`<div style="padding:0.75rem 0;border-bottom:1px solid var(--border)"><div style="font-weight:600;color:var(--danger)">${a.event||'Severe weather alert'}</div><div style="font-size:0.8rem;color:var(--muted);margin-top:0.25rem">${(a.description||'').slice(0,240)}${a.sender_name?` — ${a.sender_name}`:''}</div></div>`).join('');
+        document.getElementById('alerts-result').innerHTML=`<div class="card"><div class="section-title">Alerts — ${d.name}</div>${rows}</div>`;
+      }
+    }catch(e){document.getElementById('alerts-result').innerHTML=`<div class="error">${e.message}</div>`}
   }catch(e){document.getElementById('current-result').innerHTML=`<div class="error">${e.message}</div>`}
   btn.disabled=false;btn.textContent='Search';loadStatsStrip()
 }
@@ -230,6 +256,9 @@ async function loadProviderStatus(){
     box.innerHTML=d.providers.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-bottom:1px solid var(--border)"><span style="text-transform:capitalize">${p.provider}</span><span style="color:${p.healthy?'var(--success)':'var(--danger)'};font-size:0.8rem">${p.healthy?'● healthy':'● cooling down ('+p.recent_failures+' fails)'}</span></div>`).join('');
   }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
 }
+function getStoredKey(){try{return localStorage.getItem('weatherApiKey')||''}catch{return ''}}
+function storeKey(k){try{localStorage.setItem('weatherApiKey',k)}catch{}}
+
 async function generateKey(){
   const tier=document.getElementById('tier-select').value;
   const box=document.getElementById('key-result');
@@ -239,6 +268,12 @@ async function generateKey(){
     const d=await res.json();
     if(!res.ok)throw new Error(d.detail||'Failed');
     box.innerHTML=`<div style="margin-top:1rem;padding:1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.35rem">YOUR API KEY — save it, it won't be shown again</div><code style="color:var(--accent2);font-size:0.85rem;word-break:break-all">${d.api_key}</code><div style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem">${d.tier} tier · ${d.daily_limit} requests/day</div></div>`;
+    // Remembered locally (this browser only — nothing is sent anywhere
+    // new) purely so the Usage and Favorites tabs don't need it pasted
+    // in again every time.
+    storeKey(d.api_key);
+    document.getElementById('usage-key-input').value=d.api_key;
+    document.getElementById('favorites-key-input').value=d.api_key;
   }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
 }
 async function checkUsage(){
@@ -254,6 +289,50 @@ async function checkUsage(){
     box.innerHTML=`<div style="margin-top:1rem"><div class="stats-grid"><div class="stat"><div class="stat-label">Used Today</div><div class="stat-value">${d.used}</div></div><div class="stat"><div class="stat-label">Limit</div><div class="stat-value">${d.limit}</div></div><div class="stat"><div class="stat-label">Remaining</div><div class="stat-value">${d.remaining}</div></div></div><div style="background:var(--bg);border-radius:999px;height:6px;margin-top:1rem;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--accent)"></div></div></div>`;
   }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
 }
+function renderFavorites(favorites){
+  const box=document.getElementById('favorites-result');
+  if(!favorites.length){box.innerHTML='<div class="empty-state"><div class="icon">⭐</div><div class="title">No favorites yet</div><div class="sub">Add a city above to track it here</div></div>';return}
+  box.innerHTML=`<div class="chip-row" style="margin-bottom:0">${favorites.map(c=>{const safe=c.replace(/'/g,"\\'");return `<span class="chip" style="display:inline-flex;align-items:center;gap:0.5rem;cursor:default"><span style="cursor:pointer" onclick="quickSearch('${safe}')">${c}</span><span style="cursor:pointer;color:var(--danger)" onclick="removeFavorite('${safe}')">&times;</span></span>`}).join('')}</div>`;
+}
+function _favoritesKey(){const input=document.getElementById('favorites-key-input');const key=input.value.trim()||getStoredKey();if(key)input.value=key;return key}
+async function loadFavorites(){
+  const key=_favoritesKey();
+  const box=document.getElementById('favorites-result');
+  if(!key){box.innerHTML='<div class="error">Enter your API key first (or generate one in the API Key tab)</div>';return}
+  box.innerHTML='<span class="loading">Loading...</span>';
+  try{
+    const res=await fetch(`${BASE}/favorites`,{headers:{'x-api-key':key}});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.detail||'Failed');
+    renderFavorites(d.favorites);
+  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+}
+async function addFavorite(){
+  const key=_favoritesKey();
+  const cityInput=document.getElementById('favorite-city-input');
+  const city=cityInput.value.trim();
+  const box=document.getElementById('favorites-result');
+  if(!key){box.innerHTML='<div class="error">Enter your API key first</div>';return}
+  if(!city)return;
+  box.innerHTML='<span class="loading">Adding...</span>';
+  try{
+    const res=await fetch(`${BASE}/favorites?city=${encodeURIComponent(city)}`,{method:'POST',headers:{'x-api-key':key}});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.detail||'Failed');
+    cityInput.value='';
+    renderFavorites(d.favorites);
+  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+}
+async function removeFavorite(city){
+  const key=_favoritesKey();
+  try{
+    const res=await fetch(`${BASE}/favorites/${encodeURIComponent(city)}`,{method:'DELETE',headers:{'x-api-key':key}});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.detail||'Failed');
+    renderFavorites(d.favorites);
+  }catch(e){document.getElementById('favorites-result').innerHTML=`<div class="error">${e.message}</div>`}
+}
+async function loadVersion(){try{const d=await apiFetch('/version');document.getElementById('version-badge').textContent='v'+d.version}catch{}}
 async function loadStatsStrip(){
   try{
     const d=await apiFetch('/top');
@@ -264,8 +343,11 @@ async function loadStatsStrip(){
   }catch{}
 }
 document.getElementById('city-input').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+document.getElementById('favorite-city-input').addEventListener('keydown',e=>{if(e.key==='Enter')addFavorite()});
 checkHealth();setInterval(checkHealth,30000);
 loadStatsStrip();
+loadVersion();
+(function prefillStoredKey(){const k=getStoredKey();if(!k)return;document.getElementById('usage-key-input').value=k;document.getElementById('favorites-key-input').value=k})();
 </script>
 </body>
 </html>

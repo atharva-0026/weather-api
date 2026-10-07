@@ -14,6 +14,7 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
 - Rate limiting (10 req/min per IP)
 - Query history + leaderboard
 - Severe weather alerts
+- Favorite cities, tied to an API key (survives across devices/browsers)
 - Metric/imperial toggle
 - Request logging
 - Health check endpoint
@@ -51,6 +52,9 @@ docker compose up --build
 | `GET /weather/{city}/ml-forecast?days=N` | ML temperature forecast (N=1-14) |
 | `POST /keys?tier=free\|pro` | Create an API key |
 | `GET /usage` | Check quota usage (`x-api-key` header) |
+| `GET /favorites` | List your favorite cities (`x-api-key` header) |
+| `POST /favorites?city=X` | Add a city to your favorites (`x-api-key` header) |
+| `DELETE /favorites/{city}` | Remove a city from your favorites (`x-api-key` header) |
 | `GET /weather/{city}/failover` | Weather with automatic provider failover |
 | `GET /providers/status` | Health of each weather provider |
 | `GET /compare?city1=X&city2=Y` | Compare cities |
@@ -63,6 +67,9 @@ docker compose up --build
 
 ## API Keys & Quotas
 Every endpoint works anonymously under the existing per-IP rate limit. Optionally pass an `x-api-key` header (get one from `POST /keys`) to track usage against a daily quota instead: free tier is 200 requests/day, pro is 2000/day. Quotas reset at midnight UTC.
+
+## Favorite Cities
+Favorites (`GET`/`POST /favorites`, `DELETE /favorites/{city}`) require an `x-api-key` header — they're stored against the key in Redis rather than anything client-side, so they follow you across devices and browsers instead of resetting the moment you clear cookies or switch machines. Adding "Mumbai" and later "mumbai" counts as one favorite (case-insensitive, same reasoning as `/compare`'s duplicate-city check), and each key can hold up to 25. The dashboard's Favorites tab remembers the API key you last generated in `localStorage` (browser-local only) so you don't have to paste it in again.
 
 ## Multi-Provider Failover
 `/weather/{city}/failover` tries OpenWeather first, then WeatherAPI.com (set `WEATHERAPI_KEY` to enable), then Open-Meteo (free, no key, always available as a last resort). Each provider trips a circuit breaker after 3 consecutive failures and is skipped for 5 minutes. After the cooldown, one trial request is let through (half-open state) before the provider is fully trusted again — a failed trial reopens the breaker with a fresh cooldown. Check `/providers/status` to see current health (`closed`, `open`, or `half_open` per provider).
