@@ -209,3 +209,48 @@ def test_frontend_url_encodes_city_names():
     compare_body = content[compare_idx: compare_idx + 800]
     assert "encodeURIComponent(city1)" in compare_body
     assert "encodeURIComponent(city2)" in compare_body
+
+
+def test_version_badge_is_fetched_not_hardcoded():
+    """Regression guard: the header previously hardcoded "v3.0.0" as
+    plain text, already stale against main.API_VERSION ("3.1.0") by
+    the time this was noticed - the exact kind of drift main.py's own
+    API_VERSION comment says was already fixed once between the
+    FastAPI app version and the /version endpoint. The badge must be
+    populated from a live call to /version instead of a literal
+    version string baked into the page."""
+    content = _read("static/index.html")
+    assert "v3.0.0" not in content, "a hardcoded version string must not reappear in the dashboard"
+    assert 'id="version-badge"' in content
+    assert "apiFetch('/version')" in content or 'apiFetch("/version")' in content
+
+
+def test_alerts_tab_is_wired_into_search():
+    """Regression guard: /weather/{city}/alerts existed on the backend
+    with its own dashboard tab button, but search() never actually
+    called it - the Alerts tab was permanently empty regardless of
+    which city was searched or whether it had active alerts."""
+    content = _read("static/index.html")
+    assert 'id="tab-alerts"' in content
+    assert "showTab('alerts',event)" in content
+
+    search_idx = content.find("async function search()")
+    compare_idx = content.find("async function compareWeather()")
+    assert search_idx != -1 and compare_idx != -1
+    search_body = content[search_idx:compare_idx]
+    assert "/alerts" in search_body, "search() must call the /alerts endpoint for the Alerts tab to ever show anything"
+    assert "alerts-result" in search_body
+
+
+def test_favorites_tab_sends_api_key_header():
+    """Favorites are stored server-side against an API key (see
+    auth.get_favorites/add_favorite/remove_favorite) - every
+    favorites-related fetch from the dashboard must send x-api-key,
+    or every call would just 401."""
+    content = _read("static/index.html")
+    favorites_idx = content.find("function renderFavorites")
+    assert favorites_idx != -1, "expected the favorites rendering/fetch logic in static/index.html"
+    favorites_body = content[favorites_idx: favorites_idx + 2500]
+    assert favorites_body.count("x-api-key") >= 3, (
+        "loadFavorites/addFavorite/removeFavorite must each send the x-api-key header"
+    )

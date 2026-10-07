@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ml_forecast import get_or_train_model, predict_next_days
-from auth import create_key, validate_and_track, get_usage, TIERS
+from auth import create_key, validate_and_track, get_usage, TIERS, get_favorites, add_favorite, remove_favorite
 from providers import fetch_with_failover, provider_status
 
 load_dotenv()
@@ -286,6 +286,20 @@ async def compare(city1: str, city2: str, request: Request, units: str = Query("
         city1: {"temp": f"{w1['main']['temp']}{unit_label}", "humidity": w1["main"]["humidity"], "weather": w1["weather"][0]["description"]},
         city2: {"temp": f"{w2['main']['temp']}{unit_label}", "humidity": w2["main"]["humidity"], "weather": w2["weather"][0]["description"]},
     }
+
+@app.get("/favorites", summary="List your favorite cities")
+async def list_favorites(x_api_key: str = Header(...)):
+    return get_favorites(r, x_api_key)
+
+@app.post("/favorites", summary="Add a city to your favorites")
+@limiter.limit("30/minute")
+async def add_favorite_city(city: str, request: Request, x_api_key: str = Header(...)):
+    return add_favorite(r, x_api_key, city)
+
+@app.delete("/favorites/{city}", summary="Remove a city from your favorites")
+@limiter.limit("30/minute")
+async def delete_favorite_city(city: str, request: Request, x_api_key: str = Header(...)):
+    return remove_favorite(r, x_api_key, city)
 
 @app.get("/history/{city}", summary="Query history")
 async def get_history(city: str):

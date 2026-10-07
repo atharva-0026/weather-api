@@ -329,3 +329,48 @@ def test_alerts_raises_502_on_upstream_error_instead_of_returning_no_alerts(mock
     with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=_FakeUpstreamResponse(_OPENWEATHER_ERROR)):
         res = client.get("/weather/Pune/alerts")
     assert res.status_code == 502
+
+
+def test_list_favorites_requires_api_key():
+    res = client.get("/favorites")
+    assert res.status_code == 422  # Header(...) is required, same as /usage
+
+
+def test_list_favorites_rejects_invalid_key():
+    res = client.get("/favorites", headers={"x-api-key": "bogus_key"})
+    assert res.status_code == 401
+
+
+def test_add_list_and_remove_favorite_round_trip():
+    key = client.post("/keys?tier=free").json()["api_key"]
+
+    res = client.get("/favorites", headers={"x-api-key": key})
+    assert res.status_code == 200
+    assert res.json() == {"favorites": []}
+
+    res = client.post("/favorites?city=Mumbai", headers={"x-api-key": key})
+    assert res.status_code == 200
+    assert res.json() == {"favorites": ["Mumbai"]}
+
+    res = client.post("/favorites?city=Delhi", headers={"x-api-key": key})
+    assert res.status_code == 200
+    assert res.json() == {"favorites": ["Delhi", "Mumbai"]}
+
+    res = client.get("/favorites", headers={"x-api-key": key})
+    assert res.json() == {"favorites": ["Delhi", "Mumbai"]}
+
+    res = client.delete("/favorites/Mumbai", headers={"x-api-key": key})
+    assert res.status_code == 200
+    assert res.json() == {"favorites": ["Delhi"]}
+
+
+def test_add_favorite_enforces_max_favorites_through_the_api():
+    import auth
+
+    key = client.post("/keys?tier=free").json()["api_key"]
+    for i in range(auth.MAX_FAVORITES):
+        res = client.post(f"/favorites?city=City{i}", headers={"x-api-key": key})
+        assert res.status_code == 200
+
+    res = client.post("/favorites?city=OneTooMany", headers={"x-api-key": key})
+    assert res.status_code == 400

@@ -81,3 +81,106 @@ def test_get_usage_reports_remaining_quota():
     usage = auth.get_usage(r, key)
     assert usage["used"] == 2
     assert usage["remaining"] == auth.TIERS["free"] - 2
+
+
+def test_get_favorites_for_unknown_key_raises_401():
+    r = make_redis()
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_favorites(r, "wapi_does_not_exist")
+    assert exc_info.value.status_code == 401
+
+
+def test_get_favorites_empty_for_new_key():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    assert auth.get_favorites(r, key) == {"favorites": []}
+
+
+def test_add_favorite_returns_sorted_list():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    auth.add_favorite(r, key, "Mumbai")
+    result = auth.add_favorite(r, key, "Delhi")
+    assert result == {"favorites": ["Delhi", "Mumbai"]}
+
+
+def test_add_favorite_rejects_blank_city():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    with pytest.raises(HTTPException) as exc_info:
+        auth.add_favorite(r, key, "   ")
+    assert exc_info.value.status_code == 400
+
+
+def test_add_favorite_rejects_unknown_key():
+    r = make_redis()
+    with pytest.raises(HTTPException) as exc_info:
+        auth.add_favorite(r, "wapi_does_not_exist", "Mumbai")
+    assert exc_info.value.status_code == 401
+
+
+def test_add_favorite_is_case_insensitive_like_compare_endpoint():
+    """Regression-style guard: adding 'Mumbai' then 'mumbai' must not
+    produce two separate favorites, matching /compare's existing
+    case-insensitive duplicate handling elsewhere in this codebase.
+    The later casing wins for display."""
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    auth.add_favorite(r, key, "Mumbai")
+    result = auth.add_favorite(r, key, "mumbai")
+    assert result == {"favorites": ["mumbai"]}
+
+
+def test_add_favorite_enforces_max_favorites():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    for i in range(auth.MAX_FAVORITES):
+        auth.add_favorite(r, key, f"City{i}")
+    with pytest.raises(HTTPException) as exc_info:
+        auth.add_favorite(r, key, "OneTooMany")
+    assert exc_info.value.status_code == 400
+
+
+def test_add_favorite_at_max_can_still_update_existing_entry():
+    """Re-adding (e.g. a casing change) an already-favorited city must
+    not be blocked by the max-favorites cap - only genuinely new
+    cities should be."""
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    for i in range(auth.MAX_FAVORITES):
+        auth.add_favorite(r, key, f"City{i}")
+    result = auth.add_favorite(r, key, "city0")
+    assert "city0" in result["favorites"]
+    assert len(result["favorites"]) == auth.MAX_FAVORITES
+
+
+def test_remove_favorite():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    auth.add_favorite(r, key, "Mumbai")
+    auth.add_favorite(r, key, "Delhi")
+    result = auth.remove_favorite(r, key, "Mumbai")
+    assert result == {"favorites": ["Delhi"]}
+
+
+def test_remove_favorite_is_case_insensitive():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    auth.add_favorite(r, key, "Mumbai")
+    result = auth.remove_favorite(r, key, "MUMBAI")
+    assert result == {"favorites": []}
+
+
+def test_remove_favorite_rejects_unknown_key():
+    r = make_redis()
+    with pytest.raises(HTTPException) as exc_info:
+        auth.remove_favorite(r, "wapi_does_not_exist", "Mumbai")
+    assert exc_info.value.status_code == 401
+
+
+def test_remove_nonexistent_favorite_is_a_noop():
+    r = make_redis()
+    key = auth.create_key(r)["api_key"]
+    auth.add_favorite(r, key, "Mumbai")
+    result = auth.remove_favorite(r, key, "Nowhere")
+    assert result == {"favorites": ["Mumbai"]}

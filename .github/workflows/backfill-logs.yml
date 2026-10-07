@@ -1,0 +1,29 @@
+name: Backfill Historical Weather Logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install httpx
+
+      - name: Run backfill
+        run: python backfill_logs.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "Atharva Gilbile"
+          git config user.email "atharva.gilbile@gmail.com"
+          git add logs/
+          git diff --staged --quiet || git commit -m "Backfill historical weather logs (#1)"
+          git push
