@@ -209,3 +209,23 @@ def test_frontend_url_encodes_city_names():
     compare_body = content[compare_idx: compare_idx + 800]
     assert "encodeURIComponent(city1)" in compare_body
     assert "encodeURIComponent(city2)" in compare_body
+
+
+def test_frontend_escapes_api_strings_before_innerhtml():
+    """Regression test: /top returns city names typed by *other* visitors,
+    and /compare echoes the raw query params back as object keys. Both
+    were interpolated straight into innerHTML, so a crafted city name
+    rendered as markup for anyone opening the Leaderboard tab. Every
+    API-derived string must go through esc() first."""
+    content = _read("static/index.html")
+    assert "function esc(" in content, "expected an HTML-escape helper in static/index.html"
+
+    top_idx = content.find("async function loadTop()")
+    assert top_idx != -1
+    top_body = content[top_idx: top_idx + 900]
+    assert "${esc(item.city)}" in top_body, "leaderboard city names must be escaped"
+    assert "${item.city}" not in top_body
+
+    compare_idx = content.find("async function compareWeather()")
+    compare_body = content[compare_idx: compare_idx + 1200]
+    assert "${esc(c)}" in compare_body, "compare city keys must be escaped"
