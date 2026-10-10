@@ -34,6 +34,24 @@ CLOSED = "closed"
 OPEN = "open"
 HALF_OPEN = "half_open"
 
+# WMO weather interpretation codes, as returned in Open-Meteo's
+# "weather_code" field: https://open-meteo.com/en/docs
+WMO_DESCRIPTIONS = {
+    0: "clear sky",
+    1: "mainly clear", 2: "partly cloudy", 3: "overcast",
+    45: "fog", 48: "depositing rime fog",
+    51: "light drizzle", 53: "moderate drizzle", 55: "dense drizzle",
+    56: "light freezing drizzle", 57: "dense freezing drizzle",
+    61: "slight rain", 63: "moderate rain", 65: "heavy rain",
+    66: "light freezing rain", 67: "heavy freezing rain",
+    71: "slight snow fall", 73: "moderate snow fall", 75: "heavy snow fall",
+    77: "snow grains",
+    80: "slight rain showers", 81: "moderate rain showers", 82: "violent rain showers",
+    85: "slight snow showers", 86: "heavy snow showers",
+    95: "thunderstorm",
+    96: "thunderstorm with slight hail", 99: "thunderstorm with heavy hail",
+}
+
 
 def _breaker_key(name: str) -> str:
     return f"provider_breaker:{name}"
@@ -154,7 +172,7 @@ async def fetch_openmeteo(city: str, units: str) -> dict:
         temp_unit = "fahrenheit" if units == "imperial" else "celsius"
         res = await client.get(OPENMETEO_FORECAST_URL, params={
             "latitude": lat, "longitude": lon,
-            "current": "temperature_2m,relative_humidity_2m",
+            "current": "temperature_2m,relative_humidity_2m,weather_code",
             "temperature_unit": temp_unit,
         })
         res.raise_for_status()
@@ -181,7 +199,7 @@ async def fetch_openmeteo(city: str, units: str) -> dict:
             "city": name,
             "temp": temp,
             "humidity": humidity,
-            "description": "—",
+            "description": WMO_DESCRIPTIONS.get(current.get("weather_code"), "—"),
             "lat": lat,
             "lon": lon,
             "provider": "open-meteo",

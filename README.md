@@ -17,7 +17,7 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
 - Metric/imperial toggle
 - Request logging
 - Health check endpoint
-- Dark dashboard UI at `/ui`
+- Dashboard UI at `/ui` — light/dark theme, recent searches, condition-aware hero card, shareable `?city=` links
 - Swagger docs at `/docs`
 
 ## Stack
@@ -27,6 +27,13 @@ Production-grade REST API for real-time weather data with a dark dashboard UI.
 ```bash
 cp .env.example .env   # optional — fill in provider API keys if you have them
 docker compose up --build
+```
+
+Or without Docker (needs a local Redis):
+```bash
+make install && make redis && make run   # http://localhost:8000/ui
+make test                                # run the test suite
+make help                                # list all commands
 ```
 
 ## Deploy (free tier: Render + Upstash)
