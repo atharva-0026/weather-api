@@ -1,5 +1,6 @@
 import requests
 import datetime
+import time
 import json
 import os
 import sys
@@ -15,26 +16,45 @@ import sys
 API_BASE = "https://weather-api-4nmo.onrender.com"
 LOG_DIR = "logs"
 
-def fetch_stats():
-    try:
-        # /weather/{city} requires OPENWEATHER_API_KEY to be configured
-        # on the deployment - /failover works with zero keys configured
-        # (falls back through WeatherAPI, then Open-Meteo), so this
-        # daily job doesn't depend on that key being set correctly to
-        # succeed. See KNOWN_ISSUES.md for the history of failures here.
-        #
-        # timeout=60, not 10: Render's free tier spins down the app
-        # after inactivity and can take 50+ seconds to cold-start on
-        # the next request (confirmed via Render's own dashboard
-        # warning). This cron runs once a day, so the app has almost
-        # certainly gone to sleep every single time - a 10s timeout
-        # was very likely failing on cold-start delay alone, not a
-        # real connectivity problem. Every daily run has failed since
-        # the Railway->Render migration despite the URL being correct.
-        r = requests.get(f"{API_BASE}/weather/Pune/failover", timeout=60)
-        weather = r.json() if r.status_code == 200 else {"error": r.status_code}
-    except Exception as e:
-        weather = {"error": str(e)}
+# A once-a-day request almost always lands on a sleeping Render instance.
+# Since 2026-09 those first requests have come back as HTTP 503 after
+# ~30s (Actions history: 503 on 09-19, 09-23, 09-29, and daily from
+# 10-01) while the same job succeeds on days the instance is already up.
+# The first request wakes it, so retry 5xx/connection errors with a pause
+# instead of failing the whole day on the wake-up call. 4xx is a real bug
+# (wrong URL, route removed) and is not retried.
+RETRY_DELAYS = (20, 40, 60)
+
+
+def _fetch_once():
+    r = requests.get(f"{API_BASE}/weather/Pune/failover", timeout=60)
+    if r.status_code == 200:
+        return r.json(), False
+    # Keep the start of the error body in the log: "503" alone can't tell
+    # a Render wake-up page from main.py's "all providers failed" detail.
+    return {"error": r.status_code, "detail": r.text[:300]}, r.status_code >= 500
+
+
+def fetch_stats(sleep=time.sleep, delays=RETRY_DELAYS):
+    # /weather/{city} requires OPENWEATHER_API_KEY to be configured on
+    # the deployment - /failover works with zero keys configured (falls
+    # back through WeatherAPI, then Open-Meteo), so this daily job
+    # doesn't depend on that key being set correctly to succeed. See
+    # KNOWN_ISSUES.md for the history of failures here.
+    #
+    # timeout=60, not 10: Render's free tier can take 50+ seconds to
+    # cold-start (confirmed via Render's own dashboard warning).
+    attempts = len(delays) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            weather, retryable = _fetch_once()
+        except requests.RequestException as e:
+            weather, retryable = {"error": str(e)}, True
+        if "error" not in weather or not retryable or attempt == attempts:
+            break
+        wait = delays[attempt - 1]
+        print(f"attempt {attempt}/{attempts} failed ({weather['error']}), retrying in {wait}s", file=sys.stderr)
+        sleep(wait)
 
     return {
         "date": datetime.date.today().isoformat(),

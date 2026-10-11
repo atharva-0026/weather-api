@@ -3,84 +3,161 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
 <title>Weather API</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛅</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a0a0f;--surface:#111118;--border:#1e1e2e;--accent:#6366f1;--accent2:#22d3ee;--text:#e2e8f0;--muted:#64748b;--warn:#f59e0b;--danger:#ef4444;--success:#10b981}
-body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;padding:2rem}
-header{display:flex;align-items:baseline;gap:1rem;margin-bottom:2.5rem}
-header h1{font-size:1.5rem;font-weight:600;letter-spacing:-0.02em}
-header span{font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:var(--accent);background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);padding:2px 8px;border-radius:4px}
-.search-row{display:flex;gap:0.5rem;margin-bottom:2rem;max-width:600px}
-input{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:1rem;padding:0.75rem 1rem;border-radius:8px;outline:none;transition:border-color 0.2s}
-input:focus{border-color:var(--accent)}
+:root{
+  --bg:#07080d;--bg-glow:radial-gradient(1200px 600px at 10% -10%,rgba(99,102,241,.18),transparent 60%),radial-gradient(900px 500px at 110% 10%,rgba(34,211,238,.12),transparent 60%);
+  --surface:rgba(20,21,32,.72);--surface-solid:#11121b;--raised:#0c0d14;--border:rgba(148,163,184,.12);--border-strong:rgba(148,163,184,.22);
+  --accent:#818cf8;--accent-strong:#6366f1;--accent2:#22d3ee;--text:#e2e8f0;--muted:#8391a7;--warn:#f59e0b;--danger:#f87171;--success:#34d399;
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset,0 20px 40px -24px rgba(0,0,0,.8);--radius:16px;
+  --hero:linear-gradient(135deg,#312e81 0%,#0e7490 100%);
+}
+:root[data-theme="light"]{
+  --bg:#f4f6fb;--bg-glow:radial-gradient(1200px 600px at 10% -10%,rgba(99,102,241,.14),transparent 60%),radial-gradient(900px 500px at 110% 10%,rgba(34,211,238,.12),transparent 60%);
+  --surface:rgba(255,255,255,.8);--surface-solid:#fff;--raised:#f1f4f9;--border:rgba(15,23,42,.08);--border-strong:rgba(15,23,42,.16);
+  --accent:#4f46e5;--accent-strong:#4338ca;--accent2:#0891b2;--text:#0f172a;--muted:#5b6b82;--warn:#d97706;--danger:#dc2626;--success:#059669;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 16px 32px -20px rgba(15,23,42,.25);
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg-glow),var(--bg);background-attachment:fixed;color:var(--text);font-family:'Space Grotesk',system-ui,sans-serif;min-height:100vh;padding:clamp(1rem,3vw,2.5rem);transition:background-color .3s,color .3s}
+.wrap{max-width:1040px;margin:0 auto}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{display:flex;align-items:center;gap:.75rem;margin-bottom:2rem;flex-wrap:wrap}
+.logo{display:grid;place-items:center;width:2.5rem;height:2.5rem;border-radius:12px;background:var(--hero);font-size:1.3rem;box-shadow:var(--shadow)}
+header h1{font-size:1.4rem;font-weight:700;letter-spacing:-.03em}
+.pill{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);padding:2px 8px;border-radius:999px}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:.75rem}
+.icon-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);width:2.25rem;height:2.25rem;border-radius:10px;cursor:pointer;display:grid;place-items:center;font-size:1rem;transition:border-color .2s,transform .15s}
+.icon-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+.search-row{display:flex;gap:.5rem;margin-bottom:1rem;max-width:640px}
+.search-box{position:relative;flex:1;display:flex}
+.search-box svg{position:absolute;z-index:1;left:.9rem;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.search-box input{padding-left:2.3rem}
+kbd{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--muted);border:1px solid var(--border-strong);border-radius:5px;padding:0 .35rem;pointer-events:none}
+input,select{background:var(--surface);backdrop-filter:blur(8px);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:1rem;padding:.8rem 1rem;border-radius:12px;outline:none;transition:border-color .2s,box-shadow .2s}
+input{flex:1;min-width:0}
+select{font-size:.9rem;cursor:pointer}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent)}
 input::placeholder{color:var(--muted)}
-select{background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:0.9rem;padding:0.75rem;border-radius:8px;outline:none;cursor:pointer}
-button{background:var(--accent);color:#fff;border:none;font-family:'Space Grotesk',sans-serif;font-size:0.9rem;font-weight:500;padding:0.75rem 1.25rem;border-radius:8px;cursor:pointer;transition:opacity 0.2s}
-button:hover{opacity:0.85}
-button:disabled{opacity:0.4;cursor:not-allowed}
-.tabs{display:flex;gap:0.25rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border)}
-.tab{background:none;color:var(--muted);border:none;border-bottom:2px solid transparent;border-radius:0;padding:0.5rem 1rem;font-size:0.85rem;cursor:pointer;transition:color 0.2s,border-color 0.2s;margin-bottom:-1px}
-.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1rem}
-.weather-main{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
-.big-temp{font-size:3.5rem;font-weight:700;letter-spacing:-0.04em;line-height:1;color:var(--accent2)}
-.city-name{font-size:1.4rem;font-weight:600;margin-bottom:0.25rem}
-.condition{color:var(--muted);font-size:0.9rem;text-transform:capitalize;margin-bottom:1rem}
-.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem}
-.stat{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.75rem}
-.stat-label{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;font-family:'JetBrains Mono',monospace}
-.stat-value{font-size:1.1rem;font-weight:600}
-.uv-bar{height:6px;border-radius:3px;background:linear-gradient(to right,#22d3ee,#6366f1,#f59e0b,#ef4444);margin-top:0.5rem;position:relative}
-.uv-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;background:#fff;border-radius:50%;border:2px solid var(--bg)}
-.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.compare-city{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:1rem}
-.leaderboard-row{display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:1px solid var(--border)}
+button{font-family:inherit}
+.btn{background:linear-gradient(135deg,var(--accent-strong),#7c3aed);color:#fff;border:none;font-size:.9rem;font-weight:600;padding:.8rem 1.35rem;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .2s,opacity .2s;box-shadow:0 8px 20px -10px var(--accent-strong)}
+.btn:hover{transform:translateY(-1px);box-shadow:0 12px 24px -10px var(--accent-strong)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);box-shadow:none}
+.chip-row{display:flex;gap:.5rem;margin-bottom:1.75rem;flex-wrap:wrap;align-items:center}
+.chip-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;margin-right:.25rem}
+.chip{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:.8rem;padding:.4rem .9rem;border-radius:999px;cursor:pointer;transition:all .2s}
+.chip:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
+.chip.recent{color:var(--text)}
+#recent-row{margin-bottom:.6rem}
+.tabs{display:flex;gap:.25rem;margin-bottom:1.5rem;padding:.3rem;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{background:none;color:var(--muted);border:none;border-radius:10px;padding:.55rem 1rem;font-size:.85rem;font-weight:500;cursor:pointer;white-space:nowrap;transition:color .2s,background .2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);background:var(--raised);box-shadow:var(--shadow)}
+.panel{animation:fade .35s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card{background:var(--surface);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;margin-bottom:1rem;box-shadow:var(--shadow)}
+.hero{position:relative;overflow:hidden;border:none;color:#fff;background:var(--hero);padding:1.75rem}
+.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(500px 220px at 85% 0%,rgba(255,255,255,.18),transparent 70%);pointer-events:none}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;position:relative;z-index:1}
+.hero .city-name{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
+.hero .condition{color:rgba(255,255,255,.82);font-size:.95rem;text-transform:capitalize;margin-top:.15rem}
+.hero .big-temp{font-size:clamp(3.5rem,9vw,5.5rem);font-weight:700;letter-spacing:-.05em;line-height:1;margin-top:1.25rem;color:#fff}
+.hero .big-icon{font-size:clamp(3.5rem,9vw,5rem);line-height:1;filter:drop-shadow(0 10px 20px rgba(0,0,0,.25))}
+.hero .meta{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem;font-size:.85rem;color:rgba(255,255,255,.85);position:relative;z-index:1}
+.hero .meta span{background:rgba(255,255,255,.14);padding:.25rem .65rem;border-radius:999px;backdrop-filter:blur(4px)}
+.city-name{font-size:1.2rem;font-weight:600}
+.condition{color:var(--muted);font-size:.9rem;text-transform:capitalize}
+.big-temp{font-size:2.5rem;font-weight:700;letter-spacing:-.04em;line-height:1;color:var(--accent2)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem}
+.stat{background:var(--raised);border:1px solid var(--border);border-radius:12px;padding:.85rem 1rem;transition:border-color .2s}
+.stat:hover{border-color:var(--border-strong)}
+.stat-label{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem;font-family:'JetBrains Mono',monospace}
+.stat-value{font-size:1.15rem;font-weight:600}
+.uv-bar{height:8px;border-radius:4px;background:linear-gradient(to right,#34d399,#facc15,#f59e0b,#ef4444,#a855f7);margin-top:.5rem;position:relative}
+.uv-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;background:#fff;border-radius:50%;border:3px solid var(--surface-solid);box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-top:1rem}
+.compare-city{background:var(--raised);border:1px solid var(--border);border-radius:12px;padding:1.25rem}
+.leaderboard-row{display:flex;align-items:center;gap:1rem;padding:.75rem 0;border-bottom:1px solid var(--border)}
 .leaderboard-row:last-child{border-bottom:none}
-.rank{font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--muted);width:2rem}
+.rank{font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--muted);width:2rem}
 .rank-1{color:#f59e0b}.rank-2{color:#94a3b8}.rank-3{color:#b45309}
-.bar-bg{flex:1;height:4px;background:var(--border);border-radius:2px}
-.bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.5s ease}
-.searches{font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--muted);width:4rem;text-align:right}
-.health-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:0.5rem;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.error{color:var(--danger);font-size:0.9rem;padding:0.75rem;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:8px}
-.loading{color:var(--muted);font-size:0.9rem}
-.hidden{display:none}
-.section-title{font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-family:'JetBrains Mono',monospace;margin-bottom:1rem}
-.forecast-scroll{display:flex;gap:0.75rem;overflow-x:auto;padding-bottom:0.5rem}
-.forecast-item{flex-shrink:0;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;text-align:center;min-width:80px}
-.forecast-time{font-size:0.7rem;color:var(--muted);margin-bottom:0.5rem}
-.forecast-temp{font-size:1.1rem;font-weight:600;color:var(--accent2)}
-.forecast-desc{font-size:0.65rem;color:var(--muted);margin-top:0.25rem;text-transform:capitalize}
-.aqi-badge{display:inline-flex;align-items:center;justify-content:center;width:4rem;height:4rem;border-radius:50%;font-size:1.5rem;font-weight:700;margin-bottom:1rem}
-.aqi-1{background:rgba(16,185,129,0.15);color:var(--success)}
-.aqi-2{background:rgba(34,211,238,0.15);color:var(--accent2)}
-.aqi-3{background:rgba(245,158,11,0.15);color:var(--warn)}
-.aqi-4{background:rgba(239,68,68,0.15);color:var(--danger)}
-.aqi-5{background:rgba(239,68,68,0.25);color:var(--danger)}
-.chip-row{display:flex;gap:0.5rem;margin-bottom:2rem;flex-wrap:wrap}
-.chip{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Space Grotesk',sans-serif;font-size:0.8rem;padding:0.4rem 0.9rem;border-radius:999px;cursor:pointer;transition:all 0.2s}
-.chip:hover{border-color:var(--accent);color:var(--accent)}
-.empty-state{text-align:center;padding:3rem 1rem;color:var(--muted)}
-.empty-state .icon{font-size:2.5rem;margin-bottom:0.75rem;opacity:0.6}
-.empty-state .title{font-size:1rem;color:var(--text);margin-bottom:0.35rem}
-.empty-state .sub{font-size:0.85rem}
+.lb-city{flex:0 0 140px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-bg{flex:1;height:6px;background:var(--raised);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .6s ease}
+.searches{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted);width:4.5rem;text-align:right}
+.health{display:inline-flex;align-items:center;gap:.45rem;font-size:.75rem;padding:.35rem .7rem;border-radius:999px;background:var(--surface);border:1px solid var(--border)}
+.health-dot{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 0 var(--success);animation:ping 2s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--success) 60%,transparent)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.error{color:var(--danger);font-size:.9rem;padding:.85rem 1rem;background:color-mix(in srgb,var(--danger) 10%,transparent);border:1px solid color-mix(in srgb,var(--danger) 25%,transparent);border-radius:12px}
+.loading{color:var(--muted);font-size:.9rem}
+.skeleton{height:14rem;border-radius:var(--radius);background:linear-gradient(90deg,var(--surface) 0%,var(--raised) 50%,var(--surface) 100%);background-size:200% 100%;animation:shimmer 1.2s infinite;margin-bottom:1rem;border:1px solid var(--border)}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+.hidden{display:none!important}
+.section-title{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;margin-bottom:1rem}
+.forecast-scroll{display:flex;gap:.75rem;overflow-x:auto;padding-bottom:.5rem;scroll-snap-type:x mandatory}
+.forecast-item{flex-shrink:0;background:var(--raised);border:1px solid var(--border);border-radius:14px;padding:.9rem 1rem;text-align:center;min-width:92px;scroll-snap-align:start}
+.forecast-time{font-size:.72rem;color:var(--muted);margin-bottom:.4rem}
+.forecast-icon{font-size:1.6rem;margin-bottom:.35rem}
+.forecast-temp{font-size:1.15rem;font-weight:600;color:var(--accent2)}
+.forecast-desc{font-size:.65rem;color:var(--muted);margin-top:.25rem;text-transform:capitalize}
+.aqi-badge{display:inline-flex;align-items:center;justify-content:center;width:4.5rem;height:4.5rem;border-radius:50%;font-size:1.6rem;font-weight:700;margin-bottom:.75rem}
+.aqi-1{background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)}
+.aqi-2{background:color-mix(in srgb,var(--accent2) 15%,transparent);color:var(--accent2)}
+.aqi-3{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.aqi-4{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
+.aqi-5{background:color-mix(in srgb,var(--danger) 28%,transparent);color:var(--danger)}
+.empty-state{text-align:center;padding:3.5rem 1rem;color:var(--muted)}
+.empty-state .icon{font-size:3rem;margin-bottom:.75rem}
+.empty-state .title{font-size:1.05rem;color:var(--text);margin-bottom:.35rem;font-weight:600}
+.empty-state .sub{font-size:.85rem}
+.keybox{margin-top:1rem;padding:1rem;background:var(--raised);border:1px solid var(--border);border-radius:12px}
+.keybox code{color:var(--accent2);font-size:.85rem;word-break:break-all;font-family:'JetBrains Mono',monospace}
+.row-between{display:flex;justify-content:space-between;align-items:center;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--border)}
+.row-between:last-child{border-bottom:none}
+.divider{margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem}
+.toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(1rem);opacity:0;pointer-events:none;background:var(--surface-solid);border:1px solid var(--border-strong);color:var(--text);padding:.65rem 1.1rem;border-radius:12px;font-size:.85rem;box-shadow:var(--shadow);transition:transform .3s ease,opacity .3s ease;z-index:10}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+footer{margin-top:2.5rem;text-align:center;font-size:.75rem;color:var(--muted)}
+footer a{color:var(--accent);text-decoration:none}
+@media (max-width:600px){
+  .search-row{flex-wrap:wrap}
+  .header-right{margin-left:0;width:100%;justify-content:space-between}
+  .search-row .search-box{flex-basis:100%}
+  kbd{display:none}
+  .lb-city{flex-basis:90px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
+<div class="wrap">
 <header>
-  <h1>⛅ Weather API</h1>
-  <span>v3.0.0</span>
-  <span id="health-badge" style="margin-left:auto"></span>
+  <div class="logo" aria-hidden="true">⛅</div>
+  <h1>Weather API</h1>
+  <span class="pill">v3.0.0</span>
+  <div class="header-right">
+    <span id="health-badge"></span>
+    <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" aria-label="Toggle light/dark theme" title="Toggle theme">☾</button>
+  </div>
 </header>
 <div class="search-row">
-  <input id="city-input" type="text" placeholder="Enter city..."/>
-  <select id="units-select"><option value="metric">°C</option><option value="imperial">°F</option></select>
-  <button id="search-btn" onclick="search()">Search</button>
+  <div class="search-box">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="city-input" type="text" placeholder="Search any city…" aria-label="City" autocomplete="off"/>
+    <kbd>/</kbd>
+  </div>
+  <select id="units-select" aria-label="Units"><option value="metric">°C</option><option value="imperial">°F</option></select>
+  <button class="btn" id="search-btn" onclick="search()">Search</button>
 </div>
+<div class="chip-row" id="recent-row"></div>
 <div class="chip-row" id="chip-row">
+  <span class="chip-label">Try</span>
   <button class="chip" onclick="quickSearch('Mumbai')">Mumbai</button>
   <button class="chip" onclick="quickSearch('Delhi')">Delhi</button>
   <button class="chip" onclick="quickSearch('London')">London</button>
@@ -88,68 +165,114 @@ button:disabled{opacity:0.4;cursor:not-allowed}
   <button class="chip" onclick="quickSearch('Tokyo')">Tokyo</button>
   <button class="chip" onclick="quickSearch('Dubai')">Dubai</button>
 </div>
-<div class="tabs">
-  <button class="tab active" onclick="showTab('current',event)">Current</button>
-  <button class="tab" onclick="showTab('forecast',event)">Forecast</button>
-  <button class="tab" onclick="showTab('uv',event)">UV Index</button>
-  <button class="tab" onclick="showTab('aqi',event)">Air Quality</button>
-  <button class="tab" onclick="showTab('ml',event)">ML Forecast</button>
-  <button class="tab" onclick="showTab('compare',event)">Compare</button>
-  <button class="tab" onclick="showTab('top',event)">Leaderboard</button>
-  <button class="tab" onclick="showTab('apikey',event)">API Key</button>
-</div>
-<div id="tab-current">
+<nav class="tabs" role="tablist">
+  <button class="tab active" role="tab" data-tab="current" onclick="showTab('current',event)">Current</button>
+  <button class="tab" role="tab" data-tab="forecast" onclick="showTab('forecast',event)">Forecast</button>
+  <button class="tab" role="tab" data-tab="uv" onclick="showTab('uv',event)">UV Index</button>
+  <button class="tab" role="tab" data-tab="aqi" onclick="showTab('aqi',event)">Air Quality</button>
+  <button class="tab" role="tab" data-tab="ml" onclick="showTab('ml',event)">ML Forecast</button>
+  <button class="tab" role="tab" data-tab="compare" onclick="showTab('compare',event)">Compare</button>
+  <button class="tab" role="tab" data-tab="top" onclick="showTab('top',event)">Leaderboard</button>
+  <button class="tab" role="tab" data-tab="apikey" onclick="showTab('apikey',event)">API Key</button>
+</nav>
+<main>
+<div id="tab-current" class="panel">
   <div id="stats-strip"></div>
-  <div id="current-result"><div class="card empty-state"><div class="icon">🌍</div><div class="title">Search a city to get started</div><div class="sub">Or tap a quick pick above</div></div></div>
+  <div id="current-result"><div class="card empty-state"><div class="icon">🌍</div><div class="title">Search a city to get started</div><div class="sub">Press <b>/</b> to jump to search, or tap a quick pick above</div></div></div>
 </div>
-<div id="tab-forecast" class="hidden"><div id="forecast-result"></div></div>
-<div id="tab-uv" class="hidden"><div id="uv-result"></div></div>
-<div id="tab-aqi" class="hidden"><div id="aqi-result"></div></div>
-<div id="tab-ml" class="hidden"><div id="ml-result"></div></div>
-<div id="tab-compare" class="hidden">
+<div id="tab-forecast" class="panel hidden"><div id="forecast-result"><div class="card empty-state"><div class="icon">🗓️</div><div class="title">No city yet</div><div class="sub">Search a city to see the next 30 hours</div></div></div></div>
+<div id="tab-uv" class="panel hidden"><div id="uv-result"><div class="card empty-state"><div class="icon">🕶️</div><div class="title">No city yet</div></div></div></div>
+<div id="tab-aqi" class="panel hidden"><div id="aqi-result"><div class="card empty-state"><div class="icon">🍃</div><div class="title">No city yet</div></div></div></div>
+<div id="tab-ml" class="panel hidden"><div id="ml-result"><div class="card empty-state"><div class="icon">📈</div><div class="title">No city yet</div></div></div></div>
+<div id="tab-compare" class="panel hidden">
   <div class="card">
     <div class="section-title">Compare Two Cities</div>
     <div class="search-row" style="max-width:100%">
-      <input id="city1-input" type="text" placeholder="City 1..."/>
-      <input id="city2-input" type="text" placeholder="City 2..."/>
-      <button onclick="compareWeather()">Compare</button>
+      <input id="city1-input" type="text" placeholder="City 1…" aria-label="First city"/>
+      <input id="city2-input" type="text" placeholder="City 2…" aria-label="Second city"/>
+      <button class="btn" onclick="compareWeather()">Compare</button>
     </div>
     <div id="compare-result"></div>
   </div>
 </div>
-<div id="tab-top" class="hidden">
+<div id="tab-top" class="panel hidden">
   <div class="card">
     <div class="section-title">Most Searched Cities</div>
-    <div id="top-result"><span class="loading">Loading...</span></div>
+    <div id="top-result"><span class="loading">Loading…</span></div>
   </div>
 </div>
-<div id="tab-apikey" class="hidden">
+<div id="tab-apikey" class="panel hidden">
   <div class="card">
     <div class="section-title">API Access</div>
-    <div style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Anonymous requests work fine under the shared rate limit. Generate a key for your own tracked daily quota.</div>
+    <div style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Anonymous requests work fine under the shared rate limit. Generate a key for your own tracked daily quota.</div>
     <div class="search-row" style="max-width:100%">
-      <select id="tier-select"><option value="free">Free — 200/day</option><option value="pro">Pro — 2000/day</option></select>
-      <button onclick="generateKey()">Generate Key</button>
+      <select id="tier-select" aria-label="Tier"><option value="free">Free — 200/day</option><option value="pro">Pro — 2000/day</option></select>
+      <button class="btn" onclick="generateKey()">Generate Key</button>
     </div>
     <div id="key-result"></div>
-    <div style="margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem">
+    <div class="divider">
       <div class="section-title">Check Usage</div>
       <div class="search-row" style="max-width:100%">
-        <input id="usage-key-input" type="text" placeholder="Paste your API key..."/>
-        <button onclick="checkUsage()">Check</button>
+        <input id="usage-key-input" type="text" placeholder="Paste your API key…" aria-label="API key"/>
+        <button class="btn" onclick="checkUsage()">Check</button>
       </div>
       <div id="usage-result"></div>
     </div>
-    <div style="margin-top:2rem;border-top:1px solid var(--border);padding-top:1.5rem">
+    <div class="divider">
       <div class="section-title">Provider Health</div>
-      <div id="provider-status"><span class="loading">Loading...</span></div>
+      <div id="provider-status"><span class="loading">Loading…</span></div>
     </div>
   </div>
 </div>
+</main>
+<footer>Interactive docs at <a href="/docs">/docs</a> · Data from OpenWeather, WeatherAPI &amp; Open-Meteo</footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 const BASE='';
+const RECENT_KEY='weather.recent',THEME_KEY='weather.theme';
+// Everything rendered below goes through innerHTML. City names come from
+// free-text input and from /top (cities other visitors searched), so any
+// API-derived string must be escaped before interpolation.
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function store(k,v){try{v===undefined?localStorage.removeItem(k):localStorage.setItem(k,JSON.stringify(v))}catch{}}
+function load(k,fallback){try{const v=localStorage.getItem(k);return v==null?fallback:JSON.parse(v)}catch{return fallback}}
 async function apiFetch(path){const res=await fetch(BASE+path);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');return data}
-function showTab(name,e){document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');e.target.classList.add('active');if(name==='top')loadTop();if(name==='apikey')loadProviderStatus()}
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2200)}
+
+// Condition → icon + hero gradient. Keys are OpenWeather's weather[0].main.
+const CONDITIONS={
+  Clear:{icon:'☀️',night:'🌙',bg:'linear-gradient(135deg,#f59e0b 0%,#ef4444 55%,#7c3aed 100%)',nightBg:'linear-gradient(135deg,#0f172a 0%,#312e81 100%)'},
+  Clouds:{icon:'☁️',bg:'linear-gradient(135deg,#475569 0%,#1e293b 100%)'},
+  Rain:{icon:'🌧️',bg:'linear-gradient(135deg,#1e3a8a 0%,#0e7490 100%)'},
+  Drizzle:{icon:'🌦️',bg:'linear-gradient(135deg,#1d4ed8 0%,#0891b2 100%)'},
+  Thunderstorm:{icon:'⛈️',bg:'linear-gradient(135deg,#1e1b4b 0%,#4c1d95 100%)'},
+  Snow:{icon:'❄️',bg:'linear-gradient(135deg,#64748b 0%,#0ea5e9 100%)'},
+  Mist:{icon:'🌫️',bg:'linear-gradient(135deg,#475569 0%,#64748b 100%)'},
+};
+['Fog','Haze','Smoke','Dust','Sand','Ash','Squall','Tornado'].forEach(k=>CONDITIONS[k]=CONDITIONS.Mist);
+function condFor(main,isNight){const c=CONDITIONS[main]||{icon:'🌡️',bg:'var(--hero)'};return{icon:isNight&&c.night?c.night:c.icon,bg:isNight&&c.nightBg?c.nightBg:c.bg}}
+function localTime(unix,tzOffset){return new Date((unix+tzOffset)*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})}
+
+function showTab(name,e){
+  document.querySelectorAll('[id^="tab-"]').forEach(el=>el.classList.add('hidden'));
+  document.querySelectorAll('.tab').forEach(el=>{el.classList.remove('active');el.setAttribute('aria-selected','false')});
+  document.getElementById('tab-'+name).classList.remove('hidden');
+  const btn=e?e.target:document.querySelector(`.tab[data-tab="${name}"]`);
+  btn.classList.add('active');btn.setAttribute('aria-selected','true');
+  if(name==='top')loadTop();if(name==='apikey')loadProviderStatus()
+}
+function renderRecent(){
+  const recent=load(RECENT_KEY,[]);
+  const row=document.getElementById('recent-row');
+  if(!recent.length){row.classList.add('hidden');return}
+  row.classList.remove('hidden');
+  row.innerHTML='<span class="chip-label">Recent</span>'+recent.map(c=>`<button class="chip recent" data-city="${esc(c)}">${esc(c)}</button>`).join('')+'<button class="chip" onclick="clearRecent()" title="Clear recent searches">✕</button>';
+  row.querySelectorAll('[data-city]').forEach(b=>b.addEventListener('click',()=>quickSearch(b.dataset.city)));
+}
+function rememberCity(city){const recent=load(RECENT_KEY,[]).filter(c=>c.toLowerCase()!==city.toLowerCase());recent.unshift(city);store(RECENT_KEY,recent.slice(0,6));renderRecent()}
+function clearRecent(){store(RECENT_KEY,undefined);renderRecent()}
+
 async function search(){
   const city=document.getElementById('city-input').value.trim();
   const units=document.getElementById('units-select').value;
@@ -164,51 +287,58 @@ async function search(){
   // units query param.
   const encodedCity=encodeURIComponent(city);
   const btn=document.getElementById('search-btn');
-  btn.disabled=true;btn.textContent='...';
+  btn.disabled=true;btn.textContent='…';
+  document.getElementById('current-result').innerHTML='<div class="skeleton"></div>';
   try{
     const d=await apiFetch(`/weather/${encodedCity}?units=${units}`);
     const unit=units==='metric'?'°C':'°F';
-    document.getElementById('current-result').innerHTML=`<div class="card"><div class="weather-main"><div><div class="city-name">${d.name}, ${d.sys.country}</div><div class="condition">${d.weather[0].description}</div><div class="big-temp">${Math.round(d.main.temp)}${unit}</div></div><div class="stats-grid" style="align-content:start"><div class="stat"><div class="stat-label">Feels Like</div><div class="stat-value">${Math.round(d.main.feels_like)}${unit}</div></div><div class="stat"><div class="stat-label">Humidity</div><div class="stat-value">${d.main.humidity}%</div></div><div class="stat"><div class="stat-label">Wind</div><div class="stat-value">${d.wind.speed} m/s</div></div><div class="stat"><div class="stat-label">Pressure</div><div class="stat-value">${d.main.pressure} hPa</div></div><div class="stat"><div class="stat-label">Visibility</div><div class="stat-value">${(d.visibility/1000).toFixed(1)} km</div></div><div class="stat"><div class="stat-label">Source</div><div class="stat-value" style="font-size:0.75rem;color:var(--accent);font-family:monospace">${d.source}</div></div></div></div></div>`;
-    const forecast=await apiFetch(`/weather/${encodedCity}/forecast?units=${units}`);
-    const items=forecast.list.slice(0,10).map(item=>{const t=new Date(item.dt*1000);const time=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return`<div class="forecast-item"><div class="forecast-time">${time}</div><div class="forecast-temp">${Math.round(item.main.temp)}${unit}</div><div class="forecast-desc">${item.weather[0].description}</div></div>`}).join('');
-    document.getElementById('forecast-result').innerHTML=`<div class="card"><div class="section-title">Next 30 Hours</div><div class="forecast-scroll">${items}</div></div>`;
+    const windUnit=units==='metric'?'m/s':'mph';
+    const tz=d.timezone||0;
+    const isNight=d.sys&&d.dt?(d.dt<d.sys.sunrise||d.dt>d.sys.sunset):false;
+    const cond=condFor(d.weather[0].main,isNight);
+    const name=esc(d.name);
+    rememberCity(d.name||city);
+    history.replaceState(null,'',`?city=${encodedCity}&units=${units}`);
+    const sun=d.sys&&d.sys.sunrise?`<span>🌅 ${localTime(d.sys.sunrise,tz)}</span><span>🌇 ${localTime(d.sys.sunset,tz)}</span>`:'';
+    document.getElementById('current-result').innerHTML=`<div class="card hero" style="background:${cond.bg}"><div class="hero-top"><div><div class="city-name">${name}, ${esc(d.sys.country)}</div><div class="condition">${esc(d.weather[0].description)}</div></div><div class="big-icon" aria-hidden="true">${cond.icon}</div></div><div class="big-temp" style="position:relative;z-index:1">${Math.round(d.main.temp)}${unit}</div><div class="meta"><span>Feels like ${Math.round(d.main.feels_like)}${unit}</span><span>H ${Math.round(d.main.temp_max)}° · L ${Math.round(d.main.temp_min)}°</span>${sun}<span>Local ${localTime(d.dt,tz)}</span></div></div><div class="card"><div class="stats-grid"><div class="stat"><div class="stat-label">Humidity</div><div class="stat-value">${d.main.humidity}%</div></div><div class="stat"><div class="stat-label">Wind</div><div class="stat-value">${d.wind.speed} ${windUnit}</div></div><div class="stat"><div class="stat-label">Pressure</div><div class="stat-value">${d.main.pressure} hPa</div></div><div class="stat"><div class="stat-label">Visibility</div><div class="stat-value">${d.visibility!=null?(d.visibility/1000).toFixed(1)+' km':'—'}</div></div><div class="stat"><div class="stat-label">Clouds</div><div class="stat-value">${d.clouds?.all??'—'}%</div></div><div class="stat"><div class="stat-label">Source</div><div class="stat-value" style="font-size:.8rem;color:var(--accent);font-family:'JetBrains Mono',monospace">${esc(d.source)}</div></div></div></div>`;
+    try{
+      const forecast=await apiFetch(`/weather/${encodedCity}/forecast?units=${units}`);
+      const items=forecast.list.slice(0,10).map(item=>{const time=localTime(item.dt,tz);const fi=condFor(item.weather[0].main,false).icon;return`<div class="forecast-item"><div class="forecast-time">${time}</div><div class="forecast-icon" aria-hidden="true">${fi}</div><div class="forecast-temp">${Math.round(item.main.temp)}${unit}</div><div class="forecast-desc">${esc(item.weather[0].description)}</div></div>`}).join('');
+      document.getElementById('forecast-result').innerHTML=`<div class="card"><div class="section-title">Next 30 Hours — ${name} (local time)</div><div class="forecast-scroll">${items}</div></div>`;
+    }catch(e){document.getElementById('forecast-result').innerHTML=`<div class="error">${esc(e.message)}</div>`}
     try{
       const uv=await apiFetch(`/weather/${encodedCity}/uv`);
       const uvVal=uv.uv_index;
       if(uvVal==null){
         document.getElementById('uv-result').innerHTML=`<div class="error">UV data unavailable for this location.</div>`;
       }else{
-        const uvPct=Math.min(uvVal/15,1)*100;
+        const uvPct=Math.min(uvVal/11,1)*100;
         const uvLabel=uvVal<3?'Low':uvVal<6?'Moderate':uvVal<8?'High':uvVal<11?'Very High':'Extreme';
-        document.getElementById('uv-result').innerHTML=`<div class="card"><div class="section-title">UV Index — ${d.name}</div><div style="font-size:2.5rem;font-weight:700;color:var(--warn);margin-bottom:0.5rem">${uvVal.toFixed(1)}</div><div style="color:var(--muted);margin-bottom:1rem">${uvLabel}</div><div class="uv-bar"><div class="uv-dot" style="left:${uvPct}%"></div></div><div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:0.7rem;color:var(--muted)"><span>Low</span><span>Moderate</span><span>High</span><span>Extreme</span></div></div>`;
+        const uvTip=uvVal<3?'No protection needed.':uvVal<6?'Wear sunscreen and sunglasses.':uvVal<8?'Seek shade around midday.':'Avoid the sun between 10am and 4pm.';
+        document.getElementById('uv-result').innerHTML=`<div class="card"><div class="section-title">UV Index — ${name}</div><div style="font-size:3rem;font-weight:700;color:var(--warn);line-height:1">${uvVal.toFixed(1)}</div><div style="margin:.4rem 0 1.25rem"><b>${uvLabel}</b> <span style="color:var(--muted)">· ${uvTip}</span></div><div class="uv-bar"><div class="uv-dot" style="left:${uvPct}%"></div></div><div style="display:flex;justify-content:space-between;margin-top:.5rem;font-size:.7rem;color:var(--muted)"><span>Low</span><span>Moderate</span><span>High</span><span>Very High</span><span>Extreme</span></div></div>`;
       }
-    }catch(e){document.getElementById('uv-result').innerHTML=`<div class="error">${e.message}</div>`}
+    }catch(e){document.getElementById('uv-result').innerHTML=`<div class="error">${esc(e.message)}</div>`}
     try{
       const aqi=await apiFetch(`/weather/${encodedCity}/aqi`);
       const aqiLabels={1:'Good',2:'Fair',3:'Moderate',4:'Poor',5:'Very Poor'};
       const c=aqi.components||{};
-      document.getElementById('aqi-result').innerHTML=`<div class="card"><div class="section-title">Air Quality — ${d.name}</div><div class="aqi-badge aqi-${aqi.aqi}">${aqi.aqi}</div><div style="color:var(--muted);margin-bottom:1rem">${aqiLabels[aqi.aqi]||'Unknown'}</div><div class="stats-grid"><div class="stat"><div class="stat-label">PM2.5</div><div class="stat-value">${c.pm2_5?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">PM10</div><div class="stat-value">${c.pm10?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">O3</div><div class="stat-value">${c.o3?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">NO2</div><div class="stat-value">${c.no2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">SO2</div><div class="stat-value">${c.so2?.toFixed(1)??'—'}</div></div><div class="stat"><div class="stat-label">CO</div><div class="stat-value">${c.co?.toFixed(1)??'—'}</div></div></div></div>`;
-    }catch(e){document.getElementById('aqi-result').innerHTML=`<div class="error">${e.message}</div>`}
+      const f=v=>v?.toFixed(1)??'—';
+      document.getElementById('aqi-result').innerHTML=`<div class="card"><div class="section-title">Air Quality — ${name}</div><div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem"><div class="aqi-badge aqi-${Number(aqi.aqi)}">${esc(aqi.aqi)}</div><div><div style="font-weight:600;font-size:1.1rem">${aqiLabels[aqi.aqi]||'Unknown'}</div><div style="color:var(--muted);font-size:.8rem">OpenWeather AQI scale 1–5 · μg/m³</div></div></div><div class="stats-grid"><div class="stat"><div class="stat-label">PM2.5</div><div class="stat-value">${f(c.pm2_5)}</div></div><div class="stat"><div class="stat-label">PM10</div><div class="stat-value">${f(c.pm10)}</div></div><div class="stat"><div class="stat-label">O3</div><div class="stat-value">${f(c.o3)}</div></div><div class="stat"><div class="stat-label">NO2</div><div class="stat-value">${f(c.no2)}</div></div><div class="stat"><div class="stat-label">SO2</div><div class="stat-value">${f(c.so2)}</div></div><div class="stat"><div class="stat-label">CO</div><div class="stat-value">${f(c.co)}</div></div></div></div>`;
+    }catch(e){document.getElementById('aqi-result').innerHTML=`<div class="error">${esc(e.message)}</div>`}
     try{
       const ml=await apiFetch(`/weather/${encodedCity}/ml-forecast?days=7`);
       const preds=ml.predictions;
       const temps=preds.map(p=>p.predicted_temp_max);
       const min=Math.min(...temps),max=Math.max(...temps);
       const range=max-min||1;
-      const w=600,h=160,pad=20;
-      const pts=preds.map((p,i)=>{
-        const x=pad+(i/(preds.length-1))*(w-2*pad);
-        const y=h-pad-((p.predicted_temp_max-min)/range)*(h-2*pad);
-        return `${x},${y}`;
-      }).join(' ');
-      const dots=preds.map((p,i)=>{
-        const x=pad+(i/(preds.length-1))*(w-2*pad);
-        const y=h-pad-((p.predicted_temp_max-min)/range)*(h-2*pad);
-        return `<circle cx="${x}" cy="${y}" r="4" fill="var(--accent2)"/><text x="${x}" y="${h-2}" font-size="9" fill="var(--muted)" text-anchor="middle">${new Date(p.date).toLocaleDateString([],{weekday:'short'})}</text><text x="${x}" y="${y-10}" font-size="10" fill="var(--text)" text-anchor="middle">${p.predicted_temp_max}°</text>`;
-      }).join('');
-      document.getElementById('ml-result').innerHTML=`<div class="card"><div class="section-title">7-Day ML Forecast — ${d.name}</div><div style="font-size:0.75rem;color:var(--muted);margin-bottom:1rem">Model: ${ml.model} · trained through ${ml.trained_through}</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg></div>`;
-    }catch(e){document.getElementById('ml-result').innerHTML=`<div class="error">${e.message}</div>`}
-  }catch(e){document.getElementById('current-result').innerHTML=`<div class="error">${e.message}</div>`}
+      const w=600,h=180,pad=28;
+      const xy=preds.map((p,i)=>[pad+(i/Math.max(preds.length-1,1))*(w-2*pad),h-pad-((p.predicted_temp_max-min)/range)*(h-2*pad-14)]);
+      const pts=xy.map(([x,y])=>`${x},${y}`).join(' ');
+      const area=`${pad},${h-pad} ${pts} ${xy[xy.length-1][0]},${h-pad}`;
+      const dots=preds.map((p,i)=>{const[x,y]=xy[i];return `<circle cx="${x}" cy="${y}" r="4.5" fill="var(--accent2)" stroke="var(--surface-solid)" stroke-width="2"/><text x="${x}" y="${h-6}" font-size="10" fill="var(--muted)" text-anchor="middle">${new Date(p.date).toLocaleDateString([],{weekday:'short'})}</text><text x="${x}" y="${y-12}" font-size="11" font-weight="600" fill="var(--text)" text-anchor="middle">${Number(p.predicted_temp_max).toFixed(0)}°</text>`}).join('');
+      document.getElementById('ml-result').innerHTML=`<div class="card"><div class="section-title">7-Day ML Forecast — ${name}</div><div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem">Model: ${esc(ml.model)} · trained through ${esc(ml.trained_through)} · daily max °C</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto" role="img" aria-label="7-day predicted maximum temperature"><defs><linearGradient id="mlg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".35"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs><polygon points="${area}" fill="url(#mlg)"/><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${dots}</svg></div>`;
+    }catch(e){document.getElementById('ml-result').innerHTML=`<div class="error">${esc(e.message)}</div>`}
+  }catch(e){document.getElementById('current-result').innerHTML=`<div class="error">${esc(e.message)}</div>`}
   btn.disabled=false;btn.textContent='Search';loadStatsStrip()
 }
 async function compareWeather(){
@@ -216,43 +346,45 @@ async function compareWeather(){
   const city2=document.getElementById('city2-input').value.trim();
   const units=document.getElementById('units-select').value;
   if(!city1||!city2)return;
-  try{const d=await apiFetch(`/compare?city1=${encodeURIComponent(city1)}&city2=${encodeURIComponent(city2)}&units=${units}`);const cities=Object.keys(d);document.getElementById('compare-result').innerHTML=`<div class="compare-grid">${cities.map(c=>`<div class="compare-city"><div class="city-name" style="font-size:1.1rem;margin-bottom:0.5rem">${c}</div><div class="big-temp" style="font-size:2.5rem">${d[c].temp}</div><div class="condition">${d[c].weather}</div><div style="margin-top:0.75rem;font-size:0.85rem;color:var(--muted)">Humidity: ${d[c].humidity}%</div></div>`).join('')}</div>`}catch(e){document.getElementById('compare-result').innerHTML=`<div class="error">${e.message}</div>`}
+  try{const d=await apiFetch(`/compare?city1=${encodeURIComponent(city1)}&city2=${encodeURIComponent(city2)}&units=${units}`);const cities=Object.keys(d);document.getElementById('compare-result').innerHTML=`<div class="compare-grid">${cities.map(c=>`<div class="compare-city"><div class="city-name" style="margin-bottom:.5rem">${esc(c)}</div><div class="big-temp">${esc(d[c].temp)}</div><div class="condition" style="margin-top:.35rem">${esc(d[c].weather)}</div><div style="margin-top:.75rem;font-size:.85rem;color:var(--muted)">💧 Humidity ${esc(d[c].humidity)}%</div></div>`).join('')}</div>`}catch(e){document.getElementById('compare-result').innerHTML=`<div class="error">${esc(e.message)}</div>`}
 }
 async function loadTop(){
-  try{const d=await apiFetch('/top');const max=d.leaderboard[0]?.searches||1;document.getElementById('top-result').innerHTML=d.leaderboard.length===0?'<span class="loading">No data yet.</span>':d.leaderboard.map((item,i)=>`<div class="leaderboard-row"><div class="rank rank-${i+1}">${String(i+1).padStart(2,'0')}</div><div style="flex:0 0 120px;font-weight:500">${item.city}</div><div class="bar-bg"><div class="bar-fill" style="width:${(item.searches/max)*100}%"></div></div><div class="searches">${item.searches} req</div></div>`).join('')}catch(e){document.getElementById('top-result').innerHTML=`<div class="error">${e.message}</div>`}
+  const box=document.getElementById('top-result');
+  try{const d=await apiFetch('/top');const max=d.leaderboard[0]?.searches||1;box.innerHTML=d.leaderboard.length===0?'<span class="loading">No data yet.</span>':d.leaderboard.map((item,i)=>`<div class="leaderboard-row"><div class="rank rank-${i+1}">${String(i+1).padStart(2,'0')}</div><div class="lb-city" title="${esc(item.city)}">${esc(item.city)}</div><div class="bar-bg"><div class="bar-fill" style="width:${(item.searches/max)*100}%"></div></div><div class="searches">${Number(item.searches)} req</div></div>`).join('')}catch(e){box.innerHTML=`<div class="error">${esc(e.message)}</div>`}
 }
-async function checkHealth(){try{const d=await apiFetch('/health');document.getElementById('health-badge').innerHTML=`<span class="health-dot"></span><span style="font-size:0.75rem;color:var(--success)">online · ${d.uptime}</span>`}catch{document.getElementById('health-badge').innerHTML=`<span style="font-size:0.75rem;color:var(--danger)">offline</span>`}}
-function quickSearch(city){document.getElementById('city-input').value=city;search()}
+async function checkHealth(){const b=document.getElementById('health-badge');try{const d=await apiFetch('/health');b.innerHTML=`<span class="health"><span class="health-dot"></span><span style="color:var(--success)">online · ${esc(d.uptime)}</span></span>`}catch{b.innerHTML=`<span class="health" style="color:var(--danger)">● offline</span>`}}
+function quickSearch(city){document.getElementById('city-input').value=city;showTab('current');search()}
 async function loadProviderStatus(){
   const box=document.getElementById('provider-status');
   try{
     const d=await apiFetch('/providers/status');
-    box.innerHTML=d.providers.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-bottom:1px solid var(--border)"><span style="text-transform:capitalize">${p.provider}</span><span style="color:${p.healthy?'var(--success)':'var(--danger)'};font-size:0.8rem">${p.healthy?'● healthy':'● cooling down ('+p.recent_failures+' fails)'}</span></div>`).join('');
-  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+    box.innerHTML=d.providers.map(p=>`<div class="row-between"><span style="text-transform:capitalize">${esc(p.provider)}</span><span style="color:${p.healthy?'var(--success)':'var(--danger)'};font-size:.8rem">${p.healthy?'● healthy':'● cooling down ('+Number(p.recent_failures)+' fails)'}</span></div>`).join('');
+  }catch(e){box.innerHTML=`<div class="error">${esc(e.message)}</div>`}
 }
 async function generateKey(){
   const tier=document.getElementById('tier-select').value;
   const box=document.getElementById('key-result');
-  box.innerHTML='<span class="loading">Generating...</span>';
+  box.innerHTML='<span class="loading">Generating…</span>';
   try{
     const res=await fetch(`${BASE}/keys?tier=${tier}`,{method:'POST'});
     const d=await res.json();
     if(!res.ok)throw new Error(d.detail||'Failed');
-    box.innerHTML=`<div style="margin-top:1rem;padding:1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.35rem">YOUR API KEY — save it, it won't be shown again</div><code style="color:var(--accent2);font-size:0.85rem;word-break:break-all">${d.api_key}</code><div style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem">${d.tier} tier · ${d.daily_limit} requests/day</div></div>`;
-  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+    box.innerHTML=`<div class="keybox"><div style="font-size:.7rem;color:var(--muted);margin-bottom:.35rem">YOUR API KEY — save it, it won't be shown again</div><div style="display:flex;gap:.75rem;align-items:center"><code id="new-key" style="flex:1">${esc(d.api_key)}</code><button class="btn btn-ghost" style="padding:.45rem .8rem" onclick="copyKey()">Copy</button></div><div style="font-size:.75rem;color:var(--muted);margin-top:.5rem">${esc(d.tier)} tier · ${Number(d.daily_limit)} requests/day</div></div>`;
+  }catch(e){box.innerHTML=`<div class="error">${esc(e.message)}</div>`}
 }
+async function copyKey(){const k=document.getElementById('new-key').textContent;try{await navigator.clipboard.writeText(k);toast('API key copied')}catch{toast('Copy failed — select the key manually')}}
 async function checkUsage(){
   const key=document.getElementById('usage-key-input').value.trim();
   const box=document.getElementById('usage-result');
   if(!key){box.innerHTML='<div class="error">Enter a key first</div>';return}
-  box.innerHTML='<span class="loading">Checking...</span>';
+  box.innerHTML='<span class="loading">Checking…</span>';
   try{
     const res=await fetch(`${BASE}/usage`,{headers:{'x-api-key':key}});
     const d=await res.json();
     if(!res.ok)throw new Error(d.detail||'Failed');
     const pct=Math.min(100,(d.used/d.limit)*100);
-    box.innerHTML=`<div style="margin-top:1rem"><div class="stats-grid"><div class="stat"><div class="stat-label">Used Today</div><div class="stat-value">${d.used}</div></div><div class="stat"><div class="stat-label">Limit</div><div class="stat-value">${d.limit}</div></div><div class="stat"><div class="stat-label">Remaining</div><div class="stat-value">${d.remaining}</div></div></div><div style="background:var(--bg);border-radius:999px;height:6px;margin-top:1rem;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--accent)"></div></div></div>`;
-  }catch(e){box.innerHTML=`<div class="error">${e.message}</div>`}
+    box.innerHTML=`<div style="margin-top:1rem"><div class="stats-grid"><div class="stat"><div class="stat-label">Used Today</div><div class="stat-value">${Number(d.used)}</div></div><div class="stat"><div class="stat-label">Limit</div><div class="stat-value">${Number(d.limit)}</div></div><div class="stat"><div class="stat-label">Remaining</div><div class="stat-value">${Number(d.remaining)}</div></div></div><div class="bar-bg" style="margin-top:1rem"><div class="bar-fill" style="width:${pct}%"></div></div></div>`;
+  }catch(e){box.innerHTML=`<div class="error">${esc(e.message)}</div>`}
 }
 async function loadStatsStrip(){
   try{
@@ -260,12 +392,19 @@ async function loadStatsStrip(){
     if(!d.leaderboard||d.leaderboard.length===0)return;
     const total=d.leaderboard.reduce((s,i)=>s+i.searches,0);
     const top=d.leaderboard[0];
-    document.getElementById('stats-strip').innerHTML=`<div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.5rem"><div class="stat"><div class="stat-label">Cities Tracked</div><div class="stat-value">${d.leaderboard.length}</div></div><div class="stat"><div class="stat-label">Total Queries</div><div class="stat-value">${total}</div></div><div class="stat"><div class="stat-label">Most Searched</div><div class="stat-value">${top.city}</div></div></div>`;
+    document.getElementById('stats-strip').innerHTML=`<div class="stats-grid" style="margin-bottom:1rem"><div class="stat"><div class="stat-label">Cities Tracked</div><div class="stat-value">${d.leaderboard.length}</div></div><div class="stat"><div class="stat-label">Total Queries</div><div class="stat-value">${total}</div></div><div class="stat"><div class="stat-label">Most Searched</div><div class="stat-value">${esc(top.city)}</div></div></div>`;
   }catch{}
 }
+function applyTheme(t){document.documentElement.dataset.theme=t;document.getElementById('theme-btn').textContent=t==='light'?'☾':'☀'}
+function toggleTheme(){const t=document.documentElement.dataset.theme==='light'?'dark':'light';applyTheme(t);store(THEME_KEY,t)}
+applyTheme(load(THEME_KEY,matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'));
 document.getElementById('city-input').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();document.getElementById('city-input').focus()}});
+renderRecent();
 checkHealth();setInterval(checkHealth,30000);
 loadStatsStrip();
+// Deep links: /ui?city=Tokyo&units=imperial opens straight to that city.
+(()=>{const q=new URLSearchParams(location.search);const c=q.get('city');if(q.get('units')==='imperial')document.getElementById('units-select').value='imperial';if(c){document.getElementById('city-input').value=c;search()}})();
 </script>
 </body>
 </html>

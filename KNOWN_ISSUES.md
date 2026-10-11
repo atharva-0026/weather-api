@@ -1,5 +1,21 @@
 # Known Issues
 
+## Daily log fails intermittently with HTTP 503 on a sleeping Render instance
+
+**Status:** Mitigated (2026-10).
+
+From 2026-09 the daily-log job failed on most days with `fetch failed: 503`
+roughly 30 seconds into the request (09-19, 09-23, 09-29, then every day
+from 10-01), while succeeding on other days with the same code. That
+pattern matches the free Render instance being asleep at 09:00 IST: the
+first request wakes it and gets a 503 before the app is ready.
+
+**Fix:** `daily_log.py` now retries 5xx responses and connection errors
+(waits 20s, 40s, 60s) before failing, and keeps the first 300 characters of
+the error body in the log so a Render wake-up page can be told apart from
+`/failover`'s own "all providers failed" 503. 4xx is not retried. Covered by
+`test_daily_log.py`.
+
 ## daily_log.py hit the wrong URL shape, logging 404 every day since launch
 
 **Status:** Resolved (2026-08).
