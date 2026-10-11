@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+- Daily log: retry 5xx/connection errors with 20/40/60s backoff and keep the error body, so a sleeping Render instance no longer fails the day (see KNOWN_ISSUES.md)
+- CI: `actions/setup-python` v5 → v6 (Node 20 deprecation warning)
 - Redesigned `/ui`: condition-aware hero card (icon + gradient by weather type, day/night), sunrise/sunset and city-local times, light/dark theme toggle, recent-search chips, `?city=` deep links, `/` keyboard shortcut, skeleton loading, area chart for the ML forecast, copy-to-clipboard for new API keys, responsive mobile layout
 - Fixed stored XSS in `/ui`: leaderboard city names (typed by other visitors) and `/compare` keys were rendered via `innerHTML` unescaped; all API-derived strings now go through `esc()`
 - Added `Makefile` (`make run`, `make test`, `make help`, …)
