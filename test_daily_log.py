@@ -1,4 +1,5 @@
 """Behaviour of daily_log.fetch_stats retries (no network: requests.get is stubbed)."""
+import pytest
 import requests
 
 import daily_log
@@ -56,3 +57,26 @@ def test_does_not_retry_4xx(monkeypatch):
     data = daily_log.fetch_stats(sleep=slept.append)
     assert data["pune_weather"]["error"] == 404
     assert len(calls) == 1 and slept == []
+
+
+def test_main_failure_prints_detail_and_provider_status(monkeypatch, tmp_path, capsys):
+    detail = "all providers failed: {'open-meteo': 'circuit open, cooling down'}"
+    status = {"providers": [{"name": "open-meteo", "state": "open"}]}
+    calls = _stub(monkeypatch, [_Resp(503, text=detail) for _ in range(4)] + [_Resp(200, status)])
+    fetch = daily_log.fetch_stats
+    monkeypatch.setattr(daily_log, "fetch_stats", lambda: fetch(sleep=lambda _: None))
+    monkeypatch.setattr(daily_log, "LOG_DIR", str(tmp_path))
+
+    with pytest.raises(SystemExit) as exit_info:
+        daily_log.main()
+
+    assert exit_info.value.code == 1
+    assert calls[-1].endswith("/providers/status")
+    err = capsys.readouterr().err
+    assert f"WARNING: fetch failed: 503: {detail}" in err
+    assert '"state": "open"' in err
+
+
+def test_provider_status_survives_unreachable_api(monkeypatch):
+    _stub(monkeypatch, [requests.ConnectionError("down")])
+    assert daily_log.provider_status() == {"error": "down"}
