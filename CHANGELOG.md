@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Daily log: print the 503 body and `/providers/status` to the Actions log on failure; retries alone did not fix the daily 503s
 - Daily log: retry 5xx/connection errors with 20/40/60s backoff and keep the error body, so a sleeping Render instance no longer fails the day (see KNOWN_ISSUES.md)
 - CI: `actions/setup-python` v5 → v6 (Node 20 deprecation warning)
 - Redesigned `/ui`: condition-aware hero card (icon + gradient by weather type, day/night), sunrise/sunset and city-local times, light/dark theme toggle, recent-search chips, `?city=` deep links, `/` keyboard shortcut, skeleton loading, area chart for the ML forecast, copy-to-clipboard for new API keys, responsive mobile layout

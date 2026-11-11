@@ -35,6 +35,23 @@ def _fetch_once():
     return {"error": r.status_code, "detail": r.text[:300]}, r.status_code >= 500
 
 
+def _describe(weather):
+    detail = weather.get("detail")
+    return f"{weather['error']}: {detail}" if detail else str(weather["error"])
+
+
+def provider_status():
+    # A 503 from /failover means main.py's "all providers failed" - the
+    # status code alone hid that every run from 10-11 on failed for a
+    # provider reason, not a cold start. Dump each provider's circuit
+    # breaker on the way out so the Actions log says which one and why.
+    try:
+        r = requests.get(f"{API_BASE}/providers/status", timeout=30)
+        return r.json() if r.status_code == 200 else {"error": r.status_code}
+    except (requests.RequestException, ValueError) as e:
+        return {"error": str(e)}
+
+
 def fetch_stats(sleep=time.sleep, delays=RETRY_DELAYS):
     # /weather/{city} requires OPENWEATHER_API_KEY to be configured on
     # the deployment - /failover works with zero keys configured (falls
@@ -53,7 +70,7 @@ def fetch_stats(sleep=time.sleep, delays=RETRY_DELAYS):
         if "error" not in weather or not retryable or attempt == attempts:
             break
         wait = delays[attempt - 1]
-        print(f"attempt {attempt}/{attempts} failed ({weather['error']}), retrying in {wait}s", file=sys.stderr)
+        print(f"attempt {attempt}/{attempts} failed ({_describe(weather)}), retrying in {wait}s", file=sys.stderr)
         sleep(wait)
 
     return {
@@ -75,7 +92,8 @@ def main():
     # signal anywhere. Exit non-zero on error so a broken fetch shows
     # up as a failed GitHub Actions run instead of a silent bad commit.
     if "error" in data["pune_weather"]:
-        print(f"WARNING: fetch failed: {data['pune_weather']['error']}", file=sys.stderr)
+        print(f"WARNING: fetch failed: {_describe(data['pune_weather'])}", file=sys.stderr)
+        print(f"provider status: {json.dumps(provider_status())}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
